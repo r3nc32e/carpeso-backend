@@ -13,12 +13,19 @@ public class AuditLog {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(nullable = false)
     private String action;
+
     private String performedBy;
     private String targetEntity;
     private String targetId;
+
+    @Column(length = 2000)
     private String details;
+
     private String ipAddress;
+    private String userAgent;
+    private String sessionId;
 
     private LocalDateTime timestamp = LocalDateTime.now();
 }

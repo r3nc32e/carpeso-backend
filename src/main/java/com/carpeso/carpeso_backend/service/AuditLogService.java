@@ -12,9 +12,9 @@ public class AuditLogService {
     @Autowired
     private AuditLogRepository auditLogRepository;
 
-    public AuditLog log(String action, String performedBy,
-                        String targetEntity, String targetId,
-                        String details, String ipAddress) {
+    public void log(String action, String performedBy,
+                    String targetEntity, String targetId,
+                    String details, String ipAddress) {
         AuditLog log = new AuditLog();
         log.setAction(action);
         log.setPerformedBy(performedBy);
@@ -22,18 +22,18 @@ public class AuditLogService {
         log.setTargetId(targetId);
         log.setDetails(details);
         log.setIpAddress(ipAddress);
-        return auditLogRepository.save(log);
+        auditLogRepository.save(log);
     }
 
     public List<AuditLog> getAllLogs() {
-        return auditLogRepository.findAll();
+        return auditLogRepository.findAllByOrderByTimestampDesc();
     }
 
-    public List<AuditLog> getLogsByUser(String username) {
-        return auditLogRepository.findByPerformedBy(username);
+    public List<AuditLog> getLogsByUser(String email) {
+        return auditLogRepository.findByPerformedByOrderByTimestampDesc(email);
     }
 
-    public List<AuditLog> getLogsByAction(String action) {
-        return auditLogRepository.findByAction(action);
+    public List<AuditLog> getLogsByEntity(String entity) {
+        return auditLogRepository.findByTargetEntityOrderByTimestampDesc(entity);
     }
 }

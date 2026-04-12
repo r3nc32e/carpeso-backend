@@ -1,5 +1,7 @@
 package com.carpeso.carpeso_backend.model;
 
+import com.carpeso.carpeso_backend.model.enums.PaymentMode;
+import com.carpeso.carpeso_backend.model.enums.TransactionStatus;
 import jakarta.persistence.*;
 import lombok.Data;
 import java.math.BigDecimal;
@@ -19,27 +21,44 @@ public class Transaction {
     private Vehicle vehicle;
 
     @ManyToOne
-    @JoinColumn(name = "user_id", nullable = false)
-    private User user;
+    @JoinColumn(name = "buyer_id", nullable = false)
+    private User buyer;
+
+    @ManyToOne
+    @JoinColumn(name = "handled_by")
+    private User handledBy;
 
     @Enumerated(EnumType.STRING)
-    private TransactionStatus status;
+    private TransactionStatus status = TransactionStatus.PENDING;
 
     @Enumerated(EnumType.STRING)
-    private TransactionType type;
+    private PaymentMode paymentMode;
 
-    @Column(nullable = false)
     private BigDecimal amount;
 
-    private String notes;
+    private String deliveryAddress;
+    private String deliveryNotes;
+    private LocalDateTime estimatedDelivery;
+    private LocalDateTime actualDelivery;
 
+    private LocalDateTime warrantyStartDate;
+    private LocalDateTime warrantyEndDate;
+
+    private String paymentProofUrl;
+    private boolean paymentConfirmed = false;
+    private String bankDocumentUrl;
+
+    private String idVerificationUrl;
+    private boolean idVerified = false;
+
+    @Column(length = 1000)
+    private String adminNotes;
+
+    private String receiptNumber;
+    private String receiptUrl;
+    private boolean receiptGenerated = false;
+
+    private LocalDateTime expiresAt;
     private LocalDateTime createdAt = LocalDateTime.now();
-
-    public enum TransactionStatus {
-        PENDING, APPROVED, REJECTED, COMPLETED
-    }
-
-    public enum TransactionType {
-        RESERVATION, DOWNPAYMENT, FULL_PAYMENT
-    }
+    private LocalDateTime updatedAt;
 }

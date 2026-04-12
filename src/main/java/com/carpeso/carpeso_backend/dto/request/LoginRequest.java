@@ -1,9 +1,9 @@
-package com.carpeso.carpeso_backend.dto;
+package com.carpeso.carpeso_backend.dto.request;
 
 import lombok.Data;
 
 @Data
 public class LoginRequest {
-    private String username;
+    private String email;
     private String password;
 }

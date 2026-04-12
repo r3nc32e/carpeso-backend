@@ -1,90 +1,161 @@
 package com.carpeso.carpeso_backend.service;
 
-import com.carpeso.carpeso_backend.dto.AuthResponse;
-import com.carpeso.carpeso_backend.dto.LoginRequest;
-import com.carpeso.carpeso_backend.dto.RegisterRequest;
+import com.carpeso.carpeso_backend.dto.response.UserResponse;
 import com.carpeso.carpeso_backend.model.User;
+import com.carpeso.carpeso_backend.model.enums.AdminPrivilege;
+import com.carpeso.carpeso_backend.model.enums.Role;
 import com.carpeso.carpeso_backend.repository.UserRepository;
-import com.carpeso.carpeso_backend.security.JwtUtil;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UserDetailsService;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
-public class UserService implements UserDetailsService {
+public class UserService {
 
     @Autowired
     private UserRepository userRepository;
 
     @Autowired
-    private PasswordEncoder passwordEncoder;
-
-    @Autowired
-    private JwtUtil jwtUtil;
-
-    @Autowired
     private AuditLogService auditLogService;
 
-    @Override
-    public UserDetails loadUserByUsername(String username)
-            throws UsernameNotFoundException {
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new UsernameNotFoundException(
-                        "User not found: " + username));
-        return org.springframework.security.core.userdetails.User
-                .withUsername(user.getUsername())
-                .password(user.getPassword())
-                .authorities(user.getRole().name())
-                .build();
+    @Autowired
+    private NotificationService notificationService;
+
+    public List<UserResponse> getAllBuyers() {
+        return userRepository.findByRole(Role.BUYER)
+                .stream().map(this::toResponse).collect(Collectors.toList());
     }
 
-    public AuthResponse register(RegisterRequest request) {
-        if (userRepository.existsByUsername(request.getUsername())) {
-            throw new RuntimeException("Username already exists!");
+    public List<UserResponse> getAllAdmins() {
+        return userRepository.findByRole(Role.ADMIN)
+                .stream().map(this::toResponse).collect(Collectors.toList());
+    }
+
+    public UserResponse getUserById(Long id) {
+        return toResponse(userRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("User not found!")));
+    }
+
+    public void warnUser(Long userId, String reason,
+                         String performedBy) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found!"));
+        user.setWarningCount(user.getWarningCount() + 1);
+
+        if (user.getWarningCount() >= 3) {
+            user.setSuspended(true);
+            notificationService.send(user,
+                    "Account Suspended",
+                    "Your account has been suspended due to multiple violations.",
+                    com.carpeso.carpeso_backend.model.enums.NotificationType.ACCOUNT_WARNING,
+                    null);
+        } else {
+            notificationService.send(user,
+                    "Warning Issued",
+                    "You have received a warning: " + reason,
+                    com.carpeso.carpeso_backend.model.enums.NotificationType.ACCOUNT_WARNING,
+                    null);
         }
-        if (userRepository.existsByEmail(request.getEmail())) {
+
+        userRepository.save(user);
+        auditLogService.log("USER_WARNED", performedBy,
+                "User", String.valueOf(userId),
+                "Warning issued: " + reason, "system");
+    }
+
+    public void suspendUser(Long userId, String performedBy) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found!"));
+        user.setSuspended(true);
+        userRepository.save(user);
+        auditLogService.log("USER_SUSPENDED", performedBy,
+                "User", String.valueOf(userId),
+                "User suspended", "system");
+    }
+
+    public void unsuspendUser(Long userId, String performedBy) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found!"));
+        user.setSuspended(false);
+        user.setWarningCount(0);
+        userRepository.save(user);
+        auditLogService.log("USER_UNSUSPENDED", performedBy,
+                "User", String.valueOf(userId),
+                "User unsuspended", "system");
+    }
+
+    public void deleteUser(Long userId, String performedBy) {
+        userRepository.deleteById(userId);
+        auditLogService.log("USER_DELETED", performedBy,
+                "User", String.valueOf(userId),
+                "User deleted", "system");
+    }
+
+    public void updateAdminPrivileges(Long adminId,
+                                      Set<AdminPrivilege> privileges,
+                                      String performedBy) {
+        User admin = userRepository.findById(adminId)
+                .orElseThrow(() -> new RuntimeException("Admin not found!"));
+        if (admin.getRole() != Role.ADMIN) {
+            throw new RuntimeException("User is not an admin!");
+        }
+        admin.setPrivileges(privileges);
+        userRepository.save(admin);
+        auditLogService.log("PRIVILEGES_UPDATED", performedBy,
+                "User", String.valueOf(adminId),
+                "Privileges updated: " + privileges, "system");
+    }
+
+    public User createAdmin(String email, String password,
+                            String firstName, String lastName,
+                            Set<AdminPrivilege> privileges,
+                            String performedBy,
+                            org.springframework.security.crypto.password.PasswordEncoder encoder) {
+        if (userRepository.existsByEmail(email)) {
             throw new RuntimeException("Email already exists!");
         }
-        User user = new User();
-        user.setUsername(request.getUsername());
-        user.setEmail(request.getEmail());
-        user.setPassword(passwordEncoder.encode(request.getPassword()));
-        user.setRole(User.Role.valueOf(request.getRole().toUpperCase()));
-        userRepository.save(user);
-        auditLogService.log(
-                "USER_REGISTERED",
-                user.getUsername(),
-                "User",
-                String.valueOf(user.getId()),
-                "New user registered: " + user.getUsername(),
-                "system"
-        );
-        String token = jwtUtil.generateToken(user.getUsername(),
-                user.getRole().name());
-        return new AuthResponse(token, user.getRole().name(),
-                user.getUsername());
+        User admin = new User();
+        admin.setEmail(email.toLowerCase());
+        admin.setPassword(encoder.encode(password));
+        admin.setRole(Role.ADMIN);
+        admin.setFirstName(firstName);
+        admin.setLastName(lastName);
+        admin.setPrivileges(privileges);
+        userRepository.save(admin);
+        auditLogService.log("ADMIN_CREATED", performedBy,
+                "User", String.valueOf(admin.getId()),
+                "Admin created: " + email, "system");
+        return admin;
     }
 
-    public AuthResponse login(LoginRequest request) {
-        User user = userRepository.findByUsername(request.getUsername())
-                .orElseThrow(() -> new RuntimeException("User not found!"));
-        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            throw new RuntimeException("Invalid password!");
+    public UserResponse toResponse(User user) {
+        UserResponse res = new UserResponse();
+        res.setId(user.getId());
+        res.setEmail(user.getEmail());
+        res.setFullName(user.getFullName());
+        res.setFirstName(user.getFirstName());
+        res.setMiddleName(user.getMiddleName());
+        res.setLastName(user.getLastName());
+        res.setSuffix(user.getSuffix());
+        res.setPhone(user.getPhone());
+        res.setCivilStatus(user.getCivilStatus());
+        res.setOccupation(user.getOccupation());
+        res.setEmploymentStatus(user.getEmploymentStatus());
+        res.setAddress(user.getAddress());
+        res.setCityName(user.getCityName());
+        res.setBarangayName(user.getBarangayName());
+        res.setRole(user.getRole().name());
+        res.setActive(user.isActive());
+        res.setSuspended(user.isSuspended());
+        res.setWarningCount(user.getWarningCount());
+        res.setCreatedAt(user.getCreatedAt());
+        res.setLastLogin(user.getLastLogin());
+        if (user.getPrivileges() != null) {
+            res.setPrivileges(user.getPrivileges().stream()
+                    .map(Enum::name).collect(Collectors.toSet()));
         }
-        String token = jwtUtil.generateToken(user.getUsername(),
-                user.getRole().name());
-        return new AuthResponse(token, user.getRole().name(),
-                user.getUsername());
-    }
-    public User getUserByUsername(String username) {
-        return userRepository.findByUsername(username)
-                .orElseThrow(() -> new RuntimeException("User not found!"));
-    }
-    public List<User> getAllUsers() {
-        return userRepository.findAll();
+        return res;
     }
 }
