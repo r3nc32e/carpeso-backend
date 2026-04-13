@@ -12,6 +12,8 @@ import org.springframework.web.bind.annotation.*;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.HashSet;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/superadmin")
@@ -43,10 +45,9 @@ public class SuperAdminController {
             String firstName = (String) request.get("firstName");
             String lastName = (String) request.get("lastName");
 
-            @SuppressWarnings("unchecked")
-            Set<String> privilegeStrings =
-                    (Set<String>) request.get("privileges");
-            Set<AdminPrivilege> privileges = privilegeStrings.stream()
+            List<String> privilegeList = (List<String>) request.get("privileges");
+            Set<AdminPrivilege> privileges = privilegeList == null ? new HashSet<>() :
+                    privilegeList.stream()
                     .map(AdminPrivilege::valueOf)
                     .collect(Collectors.toSet());
 
