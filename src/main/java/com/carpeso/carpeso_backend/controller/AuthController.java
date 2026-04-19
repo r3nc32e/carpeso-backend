@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -87,5 +88,37 @@ public class AuthController {
     public ResponseEntity<?> test() {
         return ResponseEntity.ok(
                 ApiResponse.success("Carpeso API is running!"));
+    }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<?> forgotPassword(
+            @RequestBody Map<String, String> request,
+            HttpServletRequest httpRequest) {
+        try {
+            String ip = httpRequest.getRemoteAddr();
+            authService.forgotPassword(request.get("email"), ip);
+            return ResponseEntity.ok(
+                    ApiResponse.success("OTP sent to your email!"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<?> resetPassword(
+            @RequestBody Map<String, String> request) {
+        try {
+            authService.resetPassword(
+                    request.get("email"),
+                    request.get("otp"),
+                    request.get("newPassword")
+            );
+            return ResponseEntity.ok(
+                    ApiResponse.success("Password reset successfully!"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error(e.getMessage()));
+        }
     }
 }

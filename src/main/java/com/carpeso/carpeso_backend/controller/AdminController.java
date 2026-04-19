@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import com.carpeso.carpeso_backend.model.Transaction;
 
 @RestController
 @RequestMapping("/api/admin")
@@ -46,6 +47,29 @@ public class AdminController {
 
     @Autowired
     private NotificationService notificationService;
+
+    @Autowired
+    private ReceiptService receiptService;
+
+
+    // ===== RECEIPT =====
+    @GetMapping("/transactions/{id}/receipt")
+    public ResponseEntity<?> generateReceipt(
+            @PathVariable Long id,
+            Authentication auth) {
+        try {
+            Transaction transaction = transactionService.getTransactionEntity(id);
+            byte[] pdf = receiptService.generateReceipt(transaction);
+            return ResponseEntity.ok()
+                    .header("Content-Type", "application/pdf")
+                    .header("Content-Disposition",
+                            "attachment; filename=receipt-" + id + ".pdf")
+                    .body(pdf);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error(e.getMessage()));
+        }
+    }
 
     // ===== VEHICLES =====
     @GetMapping("/vehicles")

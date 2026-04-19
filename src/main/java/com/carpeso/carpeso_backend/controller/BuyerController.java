@@ -13,6 +13,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
+import com.carpeso.carpeso_backend.model.Transaction;
+import com.carpeso.carpeso_backend.service.ReceiptService;
 
 @RestController
 @RequestMapping("/api/buyer")
@@ -33,6 +35,40 @@ public class BuyerController {
 
     @Autowired
     private NotificationService notificationService;
+
+    @Autowired
+    private ReceiptService receiptService;
+
+    @GetMapping("/orders/{id}/receipt")
+    public ResponseEntity<?> downloadReceipt(
+            @PathVariable Long id,
+            Authentication auth) {
+        try {
+            User buyer = authService.getCurrentUser(auth.getName());
+            Transaction transaction = transactionService.getTransactionEntity(id);
+
+            // Make sure buyer owns this transaction
+            if (!transaction.getBuyer().getId().equals(buyer.getId())) {
+                return ResponseEntity.badRequest()
+                        .body(ApiResponse.error("Unauthorized!"));
+            }
+
+            if (!transaction.isReceiptGenerated()) {
+                return ResponseEntity.badRequest()
+                        .body(ApiResponse.error("Receipt not yet available. Order must be delivered first."));
+            }
+
+            byte[] pdf = receiptService.generateReceipt(transaction);
+            return ResponseEntity.ok()
+                    .header("Content-Type", "application/pdf")
+                    .header("Content-Disposition",
+                            "attachment; filename=receipt-" + id + ".pdf")
+                    .body(pdf);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error(e.getMessage()));
+        }
+    }
 
     @PostMapping("/reserve")
     public ResponseEntity<?> reserve(

@@ -27,4 +27,5 @@ public class TransactionResponse {
     private String buyerFullName;
     private String buyerEmail;
     private String buyerPhone;
+    private Long vehicleId;
 }

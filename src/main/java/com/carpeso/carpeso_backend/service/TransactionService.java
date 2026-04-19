@@ -150,6 +150,14 @@ public class TransactionService {
                     LocalDateTime.now().plusYears(warrantyYears));
         }
 
+        // Generate receipt
+        try {
+            String receiptNumber = "RCP-" + String.format("%06d", transaction.getId())
+                    + "-" + LocalDateTime.now().getYear();
+            transaction.setReceiptNumber(receiptNumber);
+            transaction.setReceiptGenerated(true);
+        } catch (Exception ignored) {}
+
         // Set vehicle as SOLD on COMPLETED
         if (newStatus == TransactionStatus.COMPLETED) {
             Vehicle vehicle = transaction.getVehicle();
@@ -206,6 +214,8 @@ public class TransactionService {
             res.setVehicleYear(t.getVehicle().getYear());
             res.setVehicleColor(t.getVehicle().getColor());
         }
+        if (t.getVehicle() != null)
+            res.setVehicleId(t.getVehicle().getId());
         res.setAmount(t.getAmount());
         if (t.getStatus() != null)
             res.setStatus(t.getStatus().name());
@@ -227,5 +237,9 @@ public class TransactionService {
             res.setBuyerPhone(t.getBuyer().getPhone());
         }
         return res;
+    }
+    public Transaction getTransactionEntity(Long id) {
+        return transactionRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Transaction not found!"));
     }
 }

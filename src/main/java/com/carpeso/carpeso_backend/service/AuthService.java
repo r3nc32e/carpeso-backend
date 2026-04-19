@@ -173,4 +173,41 @@ public class AuthService {
         return userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found!"));
     }
+
+    public void forgotPassword(String email, String ip) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("Email not found!"));
+
+        String otp = otpUtil.generateOtp();
+        user.setOtpCode(otp);
+        user.setOtpExpiry(LocalDateTime.now().plusMinutes(10));
+        userRepository.save(user);
+
+        auditLogService.log("FORGOT_PASSWORD", email,
+                "User", String.valueOf(user.getId()),
+                "Password reset OTP sent", ip);
+    }
+
+    public void resetPassword(String email, String otp, String newPassword) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("Email not found!"));
+
+        if (user.getOtpCode() == null || !user.getOtpCode().equals(otp)) {
+            throw new RuntimeException("Invalid OTP!");
+        }
+
+        if (user.getOtpExpiry() == null ||
+                LocalDateTime.now().isAfter(user.getOtpExpiry())) {
+            throw new RuntimeException("OTP has expired!");
+        }
+
+        user.setPassword(passwordEncoder.encode(newPassword));
+        user.setOtpCode(null);
+        user.setOtpExpiry(null);
+        userRepository.save(user);
+
+        auditLogService.log("PASSWORD_RESET", email,
+                "User", String.valueOf(user.getId()),
+                "Password reset successfully", "system");
+    }
 }
