@@ -321,4 +321,18 @@ public class AdminController {
                     .body(ApiResponse.error(e.getMessage()));
         }
     }
+
+    @DeleteMapping("/reviews/{id}")
+    public ResponseEntity<?> deleteReview(
+            @PathVariable Long id,
+            Authentication auth) {
+        try {
+            reviewService.deleteReview(id, auth.getName());
+            return ResponseEntity.ok(
+                    ApiResponse.success("Review deleted!"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error(e.getMessage()));
+        }
+    }
 }

@@ -42,18 +42,12 @@ public class ReviewService {
                 .findById(request.getVehicleId())
                 .orElseThrow(() -> new RuntimeException("Vehicle not found!"));
 
-        if (reviewRepository.existsByBuyerIdAndTransactionId(
-                buyer.getId(), request.getTransactionId())) {
-            throw new RuntimeException(
-                    "You already reviewed this transaction!");
-        }
-
         Review review = new Review();
         review.setVehicle(vehicle);
         review.setBuyer(buyer);
         review.setRating(request.getRating());
         review.setComment(request.getComment());
-        review.setStatus(ReviewStatus.PENDING);
+        review.setStatus(ReviewStatus.APPROVED);
 
         if (request.getTransactionId() != null) {
             transactionRepository.findById(request.getTransactionId())
@@ -62,20 +56,6 @@ public class ReviewService {
 
         reviewRepository.save(review);
 
-        // Notify moderators
-        userRepository.findByRole(Role.ADMIN).forEach(admin -> {
-            if (admin.getPrivileges() != null &&
-                    admin.getPrivileges().contains(
-                            com.carpeso.carpeso_backend.model.enums
-                                    .AdminPrivilege.CONTENT_MODERATOR)) {
-                notificationService.send(admin,
-                        "New Review Pending",
-                        buyer.getFullName() + " submitted a review.",
-                        NotificationType.REVIEW,
-                        "/admin/reviews");
-            }
-        });
-
         auditLogService.log("REVIEW_CREATED", buyer.getEmail(),
                 "Review", String.valueOf(review.getId()),
                 "Review for vehicle #" + vehicle.getId(), "system");
@@ -83,25 +63,22 @@ public class ReviewService {
         return review;
     }
 
-    public Review moderateReview(Long reviewId, ReviewStatus status,
-                                 User moderator) {
+    public void deleteReview(Long reviewId, String performedBy) {
+        reviewRepository.findById(reviewId)
+                .orElseThrow(() -> new RuntimeException("Review not found!"));
+        reviewRepository.deleteById(reviewId);
+        auditLogService.log("REVIEW_DELETED", performedBy,
+                "Review", String.valueOf(reviewId),
+                "Review deleted", "system");
+    }
+
+    public Review moderateReview(Long reviewId, ReviewStatus status, User moderator) {
         Review review = reviewRepository.findById(reviewId)
                 .orElseThrow(() -> new RuntimeException("Review not found!"));
-
         review.setStatus(status);
         review.setModeratedBy(moderator);
         review.setModeratedAt(LocalDateTime.now());
         reviewRepository.save(review);
-
-        notificationService.send(review.getBuyer(),
-                "Review " + status.name(),
-                "Your review has been " + status.name().toLowerCase(),
-                NotificationType.REVIEW, null);
-
-        auditLogService.log("REVIEW_MODERATED", moderator.getEmail(),
-                "Review", String.valueOf(reviewId),
-                "Status: " + status, "system");
-
         return review;
     }
 

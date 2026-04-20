@@ -5,7 +5,7 @@ import lombok.Data;
 @Data
 public class ReviewRequest {
     private Long vehicleId;
-    private Long transactionId;
+    private Long transactionId; // optional
     private Integer rating;
     private String comment;
 }

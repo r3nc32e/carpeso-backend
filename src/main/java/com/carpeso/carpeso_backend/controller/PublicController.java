@@ -30,7 +30,7 @@ public class PublicController {
     @GetMapping("/vehicles")
     public ResponseEntity<?> getAvailableVehicles() {
         List<VehicleResponse> vehicles =
-                vehicleService.getAvailableVehicles();
+                vehicleService.getAllVehicles();
         return ResponseEntity.ok(
                 ApiResponse.success("Vehicles fetched!", vehicles));
     }
