@@ -50,6 +50,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/admin/**").hasAnyAuthority("ADMIN", "SUPERADMIN")
                         .requestMatchers("/api/superadmin/**").hasAuthority("SUPERADMIN")
                         .requestMatchers("/api/buyer/**").hasAuthority("BUYER")
+                        .requestMatchers("/api/files/**").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtFilter,
                         UsernamePasswordAuthenticationFilter.class);

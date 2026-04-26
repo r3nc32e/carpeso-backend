@@ -31,6 +31,7 @@ public class User {
     private String middleName;
     private String lastName;
     private String suffix;
+    @Convert(converter = com.carpeso.carpeso_backend.util.AesEncryptConverter.class)
     private String phone;
     private String civilStatus;
     private String occupation;
@@ -42,6 +43,9 @@ public class User {
     private String streetNo;
     private String lotNo;
     private String postalCode;
+
+    private int loginAttempts = 0;
+    private LocalDateTime lockoutUntil;
 
     @Enumerated(EnumType.STRING)
     private PaymentMode preferredPaymentMode;

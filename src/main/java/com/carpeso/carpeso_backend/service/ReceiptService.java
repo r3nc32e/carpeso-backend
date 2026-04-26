@@ -17,6 +17,9 @@ import com.itextpdf.layout.properties.TextAlignment;
 import com.itextpdf.layout.properties.UnitValue;
 import com.itextpdf.kernel.pdf.canvas.draw.SolidLine;
 import org.springframework.stereotype.Service;
+import com.itextpdf.io.image.ImageData;
+import com.itextpdf.io.image.ImageDataFactory;
+import java.util.List;
 
 import java.io.ByteArrayOutputStream;
 import java.time.format.DateTimeFormatter;
@@ -40,13 +43,29 @@ public class ReceiptService {
         PdfFont bold = PdfFontFactory.createFont("Helvetica-Bold");
         PdfFont regular = PdfFontFactory.createFont("Helvetica");
 
-        // Header — Red Bar
+// Header — Red Bar
         Table header = new Table(UnitValue.createPercentArray(new float[]{1}))
                 .setWidth(UnitValue.createPercentValue(100));
         Cell headerCell = new Cell()
                 .setBackgroundColor(RED)
                 .setPadding(20)
                 .setBorderRadius(new com.itextpdf.layout.properties.BorderRadius(8));
+
+// Add logo image
+        try {
+            String logoPath = "src/main/resources/static/logo.png";
+            ImageData imageData = ImageDataFactory.create(logoPath);
+            com.itextpdf.layout.element.Image logo =
+                    new com.itextpdf.layout.element.Image(imageData);
+            logo.setWidth(60).setHeight(60);
+            logo.setHorizontalAlignment(
+                    com.itextpdf.layout.properties.HorizontalAlignment.CENTER);
+            headerCell.add(logo);
+        } catch (Exception e) {
+            // Logo not found — skip
+            System.out.println("Logo not found: " + e.getMessage());
+        }
+
         headerCell.add(new Paragraph("CARPESO")
                 .setFont(bold).setFontSize(28)
                 .setFontColor(ColorConstants.WHITE)
@@ -85,6 +104,33 @@ public class ReceiptService {
 
         doc.add(new LineSeparator(new SolidLine(1f))
                 .setMarginTop(8).setMarginBottom(16));
+
+        // Personal Letter
+        doc.add(new Paragraph("\n"));
+        doc.add(new Paragraph(
+                "Dear " + (t.getBuyer() != null ? t.getBuyer().getFullName() : "Valued Customer") + ",")
+                .setFont(bold).setFontSize(12)
+                .setFontColor(DARK)
+                .setMarginBottom(8));
+
+        doc.add(new Paragraph(
+                "Good day! We are pleased to inform you that your vehicle purchase has been " +
+                        "successfully processed. This vehicle is now officially registered under your name. " +
+                        "Thank you for choosing Carpeso as your trusted automotive marketplace.")
+                .setFont(regular).setFontSize(11)
+                .setFontColor(DARK)
+                .setMarginBottom(8));
+
+        doc.add(new Paragraph(
+                "Please keep this receipt as proof of your purchase. Should you encounter any " +
+                        "issues with your vehicle, you may file a warranty claim through our platform " +
+                        "within the warranty period indicated below.")
+                .setFont(regular).setFontSize(11)
+                .setFontColor(DARK)
+                .setMarginBottom(16));
+
+        doc.add(new LineSeparator(new SolidLine(1f))
+                .setMarginBottom(16));
 
         // Buyer Info
         doc.add(new Paragraph("BUYER INFORMATION")
@@ -233,5 +279,147 @@ public class ReceiptService {
                         .setFontColor(new DeviceRgb(17, 24, 39)))
                 .setBorder(com.itextpdf.layout.borders.Border.NO_BORDER)
                 .setPaddingBottom(6));
+    }
+
+    public byte[] generateSalesReport(
+            List<com.carpeso.carpeso_backend.dto.response.TransactionResponse> transactions,
+            String period) throws Exception {
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        PdfWriter writer = new PdfWriter(baos);
+        PdfDocument pdf = new PdfDocument(writer);
+        Document doc = new Document(pdf, PageSize.A4);
+        doc.setMargins(40, 50, 40, 50);
+
+        PdfFont bold = PdfFontFactory.createFont("Helvetica-Bold");
+        PdfFont regular = PdfFontFactory.createFont("Helvetica");
+
+        // Header
+        Table header = new Table(UnitValue.createPercentArray(new float[]{1}))
+                .setWidth(UnitValue.createPercentValue(100));
+        Cell headerCell = new Cell()
+                .setBackgroundColor(RED)
+                .setPadding(20)
+                .setBorderRadius(new com.itextpdf.layout.properties.BorderRadius(8));
+
+        try {
+            String logoPath = "src/main/resources/static/logo.png";
+            ImageData imageData = ImageDataFactory.create(logoPath);
+            com.itextpdf.layout.element.Image logo =
+                    new com.itextpdf.layout.element.Image(imageData);
+            logo.setWidth(50).setHeight(50);
+            logo.setHorizontalAlignment(
+                    com.itextpdf.layout.properties.HorizontalAlignment.CENTER);
+            headerCell.add(logo);
+        } catch (Exception e) {
+            System.out.println("Logo not found: " + e.getMessage());
+        }
+
+        headerCell.add(new Paragraph("CARPESO")
+                .setFont(bold).setFontSize(24)
+                .setFontColor(ColorConstants.WHITE)
+                .setTextAlignment(TextAlignment.CENTER));
+        headerCell.add(new Paragraph("SALES REPORT — " + period.toUpperCase())
+                .setFont(bold).setFontSize(14)
+                .setFontColor(ColorConstants.WHITE)
+                .setTextAlignment(TextAlignment.CENTER)
+                .setMarginTop(4));
+        headerCell.add(new Paragraph("Generated: " +
+                java.time.LocalDateTime.now().format(FMT))
+                .setFont(regular).setFontSize(10)
+                .setFontColor(new DeviceRgb(254, 202, 202))
+                .setTextAlignment(TextAlignment.CENTER));
+        header.addCell(headerCell.setBorder(com.itextpdf.layout.borders.Border.NO_BORDER));
+        doc.add(header);
+        doc.add(new Paragraph("\n"));
+
+        // Filter by period
+        java.time.LocalDateTime now = java.time.LocalDateTime.now();
+        var filtered = transactions.stream().filter(t ->
+                java.util.List.of("DELIVERED", "COMPLETED").contains(t.getStatus())
+        ).filter(t -> {
+            if (t.getCreatedAt() == null) return false;
+            return switch (period) {
+                case "day" -> t.getCreatedAt().toLocalDate().equals(now.toLocalDate());
+                case "month" -> t.getCreatedAt().getMonth() == now.getMonth()
+                        && t.getCreatedAt().getYear() == now.getYear();
+                default -> t.getCreatedAt().getYear() == now.getYear();
+            };
+        }).collect(java.util.stream.Collectors.toList());
+
+        // Summary
+        double totalRevenue = filtered.stream()
+                .mapToDouble(t -> t.getAmount() != null ? t.getAmount().doubleValue() : 0)
+                .sum();
+
+        doc.add(new Paragraph("SUMMARY")
+                .setFont(bold).setFontSize(12)
+                .setFontColor(RED).setMarginBottom(8));
+
+        Table summaryTable = new Table(UnitValue.createPercentArray(new float[]{1, 1, 1}))
+                .setWidth(UnitValue.createPercentValue(100));
+        for (String[] cell : new String[][]{
+                {"Total Orders", String.valueOf(filtered.size()), ""},
+                {"Total Revenue", "₱" + String.format("%,.2f", totalRevenue), ""},
+                {"Period", period.toUpperCase(), ""},
+        }) {
+            summaryTable.addCell(new Cell()
+                    .add(new Paragraph(cell[0]).setFont(regular).setFontSize(9)
+                            .setFontColor(new DeviceRgb(107, 114, 128)))
+                    .add(new Paragraph(cell[1]).setFont(bold).setFontSize(14)
+                            .setFontColor(RED))
+                    .setBorder(com.itextpdf.layout.borders.Border.NO_BORDER)
+                    .setBackgroundColor(LIGHT_GRAY).setPadding(12));
+        }
+        doc.add(summaryTable);
+        doc.add(new Paragraph("\n"));
+
+        // Transactions Table
+        doc.add(new Paragraph("TRANSACTIONS")
+                .setFont(bold).setFontSize(12)
+                .setFontColor(RED).setMarginBottom(8));
+
+        Table table = new Table(UnitValue.createPercentArray(new float[]{0.5f, 2f, 2f, 1.5f, 1.5f, 1.5f}))
+                .setWidth(UnitValue.createPercentValue(100));
+
+        for (String h : new String[]{"#", "Buyer", "Vehicle", "Amount", "Payment", "Date"}) {
+            table.addHeaderCell(new Cell()
+                    .add(new Paragraph(h).setFont(bold).setFontSize(9)
+                            .setFontColor(ColorConstants.WHITE))
+                    .setBackgroundColor(RED)
+                    .setBorder(com.itextpdf.layout.borders.Border.NO_BORDER)
+                    .setPadding(8));
+        }
+
+        for (var t : filtered) {
+            String[] row = {
+                    String.valueOf(t.getId()),
+                    t.getBuyerFullName() != null ? t.getBuyerFullName() : "—",
+                    (t.getVehicleBrand() != null ? t.getVehicleBrand() : "") + " " +
+                            (t.getVehicleModel() != null ? t.getVehicleModel() : ""),
+                    "₱" + String.format("%,.2f", t.getAmount() != null ? t.getAmount().doubleValue() : 0),
+                    t.getPaymentMode() != null ? t.getPaymentMode().replace("_", " ") : "—",
+                    t.getCreatedAt() != null ? t.getCreatedAt().format(
+                            java.time.format.DateTimeFormatter.ofPattern("MM/dd/yyyy")) : "—",
+            };
+            for (String cell : row) {
+                table.addCell(new Cell()
+                        .add(new Paragraph(cell).setFont(regular).setFontSize(9))
+                        .setBorder(new com.itextpdf.layout.borders.SolidBorder(
+                                new DeviceRgb(229, 231, 235), 0.5f))
+                        .setPadding(6));
+            }
+        }
+        doc.add(table);
+
+        // Footer
+        doc.add(new Paragraph("\n\n"));
+        doc.add(new Paragraph("© 2026 Carpeso — Confidential Sales Report")
+                .setFont(regular).setFontSize(8)
+                .setFontColor(new DeviceRgb(156, 163, 175))
+                .setTextAlignment(TextAlignment.CENTER));
+
+        doc.close();
+        return baos.toByteArray();
     }
 }

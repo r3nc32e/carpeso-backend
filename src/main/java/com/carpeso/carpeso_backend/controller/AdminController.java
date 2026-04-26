@@ -255,9 +255,9 @@ public class AdminController {
 
     // ===== REVIEWS =====
     @GetMapping("/reviews")
-    public ResponseEntity<?> getPendingReviews() {
+    public ResponseEntity<?> getAllReviews() {
         return ResponseEntity.ok(ApiResponse.success(
-                "Reviews fetched!", reviewService.getPendingReviews()));
+                "Reviews fetched!", reviewService.getAllReviews()));
     }
 
     @PutMapping("/reviews/{id}/moderate")
@@ -330,6 +330,24 @@ public class AdminController {
             reviewService.deleteReview(id, auth.getName());
             return ResponseEntity.ok(
                     ApiResponse.success("Review deleted!"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    @GetMapping("/sales/report")
+    public ResponseEntity<?> generateSalesReport(
+            @RequestParam(defaultValue = "month") String period,
+            Authentication auth) {
+        try {
+            byte[] pdf = receiptService.generateSalesReport(
+                    transactionService.getAllTransactions(), period);
+            return ResponseEntity.ok()
+                    .header("Content-Type", "application/pdf")
+                    .header("Content-Disposition",
+                            "attachment; filename=sales-report-" + period + ".pdf")
+                    .body(pdf);
         } catch (Exception e) {
             return ResponseEntity.badRequest()
                     .body(ApiResponse.error(e.getMessage()));

@@ -6,6 +6,7 @@ import jakarta.persistence.*;
 import lombok.Data;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 @Data
@@ -33,6 +34,8 @@ public class Vehicle {
     @Column(nullable = false)
     private BigDecimal price;
 
+    private Integer quantity = 1;
+
     private String color;
     private String fuelType;
     private String transmission;
@@ -59,7 +62,9 @@ public class Vehicle {
     @CollectionTable(name = "vehicle_images",
             joinColumns = @JoinColumn(name = "vehicle_id"))
     @Column(name = "image_url")
-    private List<String> imageUrls;
+    private List<String> imageUrls = new ArrayList<>();
+
+    private String videoUrl;
 
     @ManyToOne
     @JoinColumn(name = "added_by")
@@ -67,4 +72,10 @@ public class Vehicle {
 
     private LocalDateTime createdAt = LocalDateTime.now();
     private LocalDateTime updatedAt;
+
+    @ElementCollection
+    @CollectionTable(name = "vehicle_videos",
+            joinColumns = @JoinColumn(name = "vehicle_id"))
+    @Column(name = "video_url")
+    private List<String> videoUrls = new ArrayList<>();
 }

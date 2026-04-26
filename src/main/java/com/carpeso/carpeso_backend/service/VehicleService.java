@@ -60,12 +60,10 @@ public class VehicleService {
         setVehicleFields(vehicle, request);
         vehicle.setAddedBy(addedBy);
         vehicleRepository.save(vehicle);
-
         auditLogService.log("VEHICLE_ADDED", addedBy.getEmail(),
                 "Vehicle", String.valueOf(vehicle.getId()),
                 "Added: " + vehicle.getBrand() + " " + vehicle.getModel(),
                 "system");
-
         return toResponse(vehicle);
     }
 
@@ -76,12 +74,10 @@ public class VehicleService {
         setVehicleFields(vehicle, request);
         vehicle.setUpdatedAt(LocalDateTime.now());
         vehicleRepository.save(vehicle);
-
         auditLogService.log("VEHICLE_UPDATED", performedBy,
                 "Vehicle", String.valueOf(id),
                 "Updated: " + vehicle.getBrand() + " " + vehicle.getModel(),
                 "system");
-
         return toResponse(vehicle);
     }
 
@@ -89,7 +85,6 @@ public class VehicleService {
         Vehicle vehicle = vehicleRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Vehicle not found!"));
         vehicleRepository.deleteById(id);
-
         auditLogService.log("VEHICLE_DELETED", performedBy,
                 "Vehicle", String.valueOf(id),
                 "Deleted: " + vehicle.getBrand() + " " + vehicle.getModel(),
@@ -122,6 +117,18 @@ public class VehicleService {
             vehicle.setCondition(VehicleCondition.valueOf(
                     request.getCondition().toUpperCase()));
         }
+        if (request.getVideoUrl() != null)
+            vehicle.setVideoUrl(request.getVideoUrl());
+        if (request.getImageUrls() != null) {
+            vehicle.getImageUrls().clear();
+            vehicle.getImageUrls().addAll(request.getImageUrls());
+        }
+        if (request.getQuantity() != null)
+            vehicle.setQuantity(request.getQuantity());
+        if (request.getVideoUrls() != null) {
+            vehicle.getVideoUrls().clear();
+            vehicle.getVideoUrls().addAll(request.getVideoUrls());
+        }
     }
 
     public VehicleResponse toResponse(Vehicle v) {
@@ -149,10 +156,13 @@ public class VehicleService {
         if (v.getStatus() != null)
             res.setStatus(v.getStatus().name());
         res.setImageUrls(v.getImageUrls());
+        res.setVideoUrl(v.getVideoUrl());
         res.setCreatedAt(v.getCreatedAt());
         Double avgRating = reviewRepository
                 .getAverageRatingByVehicleId(v.getId());
         res.setAverageRating(avgRating);
+        res.setQuantity(v.getQuantity());
+        res.setVideoUrls(v.getVideoUrls());
         return res;
     }
 }

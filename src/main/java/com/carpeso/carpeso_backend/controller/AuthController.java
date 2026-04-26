@@ -33,7 +33,26 @@ public class AuthController {
         try {
             AuthResponse response = authService.register(request);
             return ResponseEntity.ok(
-                    ApiResponse.success("Registration successful!", response));
+                    ApiResponse.success("Registration successful! Check your email for verification code.", response));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    @PostMapping("/verify-registration")
+    public ResponseEntity<?> verifyRegistration(
+            @RequestBody Map<String, String> request,
+            HttpServletRequest httpRequest) {
+        try {
+            String ip = httpRequest.getRemoteAddr();
+            AuthResponse response = authService.verifyRegistration(
+                    request.get("email"),
+                    request.get("otp"),
+                    ip
+            );
+            return ResponseEntity.ok(
+                    ApiResponse.success("Email verified! Welcome to Carpeso!", response));
         } catch (Exception e) {
             return ResponseEntity.badRequest()
                     .body(ApiResponse.error(e.getMessage()));
@@ -48,7 +67,7 @@ public class AuthController {
             String ip = httpRequest.getRemoteAddr();
             AuthResponse response = authService.login(request, ip);
             return ResponseEntity.ok(
-                    ApiResponse.success("OTP sent!", response));
+                    ApiResponse.success("OTP sent to your email!", response));
         } catch (Exception e) {
             return ResponseEntity.badRequest()
                     .body(ApiResponse.error(e.getMessage()));

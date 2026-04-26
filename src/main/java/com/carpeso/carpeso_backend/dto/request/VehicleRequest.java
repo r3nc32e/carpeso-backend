@@ -2,6 +2,7 @@ package com.carpeso.carpeso_backend.dto.request;
 
 import lombok.Data;
 import java.math.BigDecimal;
+import java.util.List;
 
 @Data
 public class VehicleRequest {
@@ -22,4 +23,8 @@ public class VehicleRequest {
     private Integer warrantyYears;
     private String warrantyDetails;
     private String condition;
+    private String videoUrl;
+    private List<String> imageUrls;
+    private Integer quantity;
+    private List<String> videoUrls;
 }

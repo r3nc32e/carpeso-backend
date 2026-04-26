@@ -20,6 +20,9 @@ import java.util.stream.Collectors;
 public class TransactionService {
 
     @Autowired
+    private EmailService emailService;
+
+    @Autowired
     private TransactionRepository transactionRepository;
 
     @Autowired
@@ -44,7 +47,6 @@ public class TransactionService {
 
     public TransactionResponse createReservation(
             TransactionRequest request, User buyer) {
-        // Check if buyer has active reservation
         if (transactionRepository.existsByBuyerIdAndStatusIn(
                 buyer.getId(), ACTIVE_STATUSES)) {
             throw new RuntimeException(
@@ -59,6 +61,17 @@ public class TransactionService {
         if (vehicle.getStatus() != VehicleStatus.AVAILABLE) {
             throw new RuntimeException("Vehicle is not available!");
         }
+
+        // Decrease quantity
+        int qty = vehicle.getQuantity() != null ? vehicle.getQuantity() : 1;
+        if (qty <= 0) throw new RuntimeException("No more units available!");
+        vehicle.setQuantity(qty - 1);
+
+// Only reserve if quantity is 0
+        if (qty - 1 == 0) {
+            vehicle.setStatus(VehicleStatus.RESERVED);
+        }
+        vehicleRepository.save(vehicle);
 
         Transaction transaction = new Transaction();
         transaction.setVehicle(vehicle);
@@ -77,7 +90,6 @@ public class TransactionService {
             } catch (Exception ignored) {}
         }
 
-        // Reserve vehicle
         vehicle.setStatus(VehicleStatus.RESERVED);
         vehicleRepository.save(vehicle);
         transactionRepository.save(transaction);
@@ -97,7 +109,6 @@ public class TransactionService {
             }
         });
 
-        // Also notify superadmin
         userRepository.findByRole(Role.SUPERADMIN).forEach(sa ->
                 notificationService.send(sa,
                         "New Reservation",
@@ -106,7 +117,6 @@ public class TransactionService {
                         NotificationType.RESERVATION,
                         "/admin/transactions"));
 
-        // Notify buyer
         notificationService.send(buyer,
                 "Reservation Submitted",
                 "Your reservation for " + vehicle.getBrand() +
@@ -114,6 +124,22 @@ public class TransactionService {
                         " is pending admin approval.",
                 NotificationType.RESERVATION,
                 "/buyer/orders");
+
+        // Send reservation confirmation email
+        try {
+            String vehicleName = vehicle.getBrand() + " " + vehicle.getModel();
+            String expiresAt = transaction.getExpiresAt()
+                    .format(java.time.format.DateTimeFormatter
+                            .ofPattern("MMMM dd, yyyy hh:mm a"));
+            emailService.sendReservationConfirmation(
+                    buyer.getEmail(),
+                    buyer.getFirstName(),
+                    vehicleName,
+                    expiresAt
+            );
+        } catch (Exception e) {
+            System.out.println("Email notification failed: " + e.getMessage());
+        }
 
         auditLogService.log("RESERVATION_CREATED", buyer.getEmail(),
                 "Transaction", String.valueOf(transaction.getId()),
@@ -139,7 +165,6 @@ public class TransactionService {
             transaction.setAdminNotes(adminNotes);
         }
 
-        // Set warranty dates on delivery
         if (newStatus == TransactionStatus.DELIVERED) {
             transaction.setActualDelivery(LocalDateTime.now());
             transaction.setWarrantyStartDate(LocalDateTime.now());
@@ -148,24 +173,19 @@ public class TransactionService {
                     transaction.getVehicle().getWarrantyYears() : 1;
             transaction.setWarrantyEndDate(
                     LocalDateTime.now().plusYears(warrantyYears));
-        }
 
-        // Generate receipt
-        try {
             String receiptNumber = "RCP-" + String.format("%06d", transaction.getId())
                     + "-" + LocalDateTime.now().getYear();
             transaction.setReceiptNumber(receiptNumber);
             transaction.setReceiptGenerated(true);
-        } catch (Exception ignored) {}
+        }
 
-        // Set vehicle as SOLD on COMPLETED
         if (newStatus == TransactionStatus.COMPLETED) {
             Vehicle vehicle = transaction.getVehicle();
             vehicle.setStatus(VehicleStatus.SOLD);
             vehicleRepository.save(vehicle);
         }
 
-        // Return vehicle to AVAILABLE if CANCELLED
         if (newStatus == TransactionStatus.CANCELLED ||
                 newStatus == TransactionStatus.EXPIRED) {
             Vehicle vehicle = transaction.getVehicle();
@@ -175,7 +195,21 @@ public class TransactionService {
 
         transactionRepository.save(transaction);
 
-        // Notify buyer
+        // Send email notification to buyer
+        try {
+            String vehicleName = transaction.getVehicle().getBrand()
+                    + " " + transaction.getVehicle().getModel();
+            emailService.sendOrderStatusUpdate(
+                    transaction.getBuyer().getEmail(),
+                    transaction.getBuyer().getFirstName(),
+                    vehicleName,
+                    newStatus.name(),
+                    adminNotes
+            );
+        } catch (Exception e) {
+            System.out.println("Email notification failed: " + e.getMessage());
+        }
+
         notificationService.send(transaction.getBuyer(),
                 "Order Update",
                 "Your order status has been updated to: " +
@@ -205,6 +239,35 @@ public class TransactionService {
                 .orElseThrow(() -> new RuntimeException("Transaction not found!")));
     }
 
+    public Transaction getTransactionEntity(Long id) {
+        return transactionRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Transaction not found!"));
+    }
+
+    public void cancelReservation(Long transactionId, User buyer) {
+        Transaction transaction = transactionRepository.findById(transactionId)
+                .orElseThrow(() -> new RuntimeException("Transaction not found!"));
+
+        if (!transaction.getBuyer().getId().equals(buyer.getId())) {
+            throw new RuntimeException("Unauthorized!");
+        }
+
+        if (transaction.getStatus() != TransactionStatus.PENDING) {
+            throw new RuntimeException("Only PENDING reservations can be cancelled!");
+        }
+
+        transaction.setStatus(TransactionStatus.CANCELLED);
+        transactionRepository.save(transaction);
+
+        Vehicle vehicle = transaction.getVehicle();
+        vehicle.setStatus(VehicleStatus.AVAILABLE);
+        vehicleRepository.save(vehicle);
+
+        auditLogService.log("RESERVATION_CANCELLED", buyer.getEmail(),
+                "Transaction", String.valueOf(transactionId),
+                "Buyer cancelled reservation", "system");
+    }
+
     public TransactionResponse toResponse(Transaction t) {
         TransactionResponse res = new TransactionResponse();
         res.setId(t.getId());
@@ -213,9 +276,8 @@ public class TransactionService {
             res.setVehicleModel(t.getVehicle().getModel());
             res.setVehicleYear(t.getVehicle().getYear());
             res.setVehicleColor(t.getVehicle().getColor());
-        }
-        if (t.getVehicle() != null)
             res.setVehicleId(t.getVehicle().getId());
+        }
         res.setAmount(t.getAmount());
         if (t.getStatus() != null)
             res.setStatus(t.getStatus().name());
@@ -224,7 +286,6 @@ public class TransactionService {
         res.setDeliveryAddress(t.getDeliveryAddress());
         res.setAdminNotes(t.getAdminNotes());
         res.setReceiptNumber(t.getReceiptNumber());
-        res.setReceiptUrl(t.getReceiptUrl());
         res.setReceiptGenerated(t.isReceiptGenerated());
         res.setWarrantyStartDate(t.getWarrantyStartDate());
         res.setWarrantyEndDate(t.getWarrantyEndDate());
@@ -237,9 +298,5 @@ public class TransactionService {
             res.setBuyerPhone(t.getBuyer().getPhone());
         }
         return res;
-    }
-    public Transaction getTransactionEntity(Long id) {
-        return transactionRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Transaction not found!"));
     }
 }

@@ -5,6 +5,7 @@ import com.carpeso.carpeso_backend.dto.request.TransactionRequest;
 import com.carpeso.carpeso_backend.dto.request.WarrantyClaimRequest;
 import com.carpeso.carpeso_backend.dto.response.ApiResponse;
 import com.carpeso.carpeso_backend.dto.response.TransactionResponse;
+import com.carpeso.carpeso_backend.model.Transaction;
 import com.carpeso.carpeso_backend.model.User;
 import com.carpeso.carpeso_backend.model.WarrantyClaim;
 import com.carpeso.carpeso_backend.service.*;
@@ -13,8 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
-import com.carpeso.carpeso_backend.model.Transaction;
-import com.carpeso.carpeso_backend.service.ReceiptService;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/buyer")
@@ -39,6 +39,9 @@ public class BuyerController {
     @Autowired
     private ReceiptService receiptService;
 
+    @Autowired
+    private UserService userService;
+
     @GetMapping("/orders/{id}/receipt")
     public ResponseEntity<?> downloadReceipt(
             @PathVariable Long id,
@@ -47,7 +50,6 @@ public class BuyerController {
             User buyer = authService.getCurrentUser(auth.getName());
             Transaction transaction = transactionService.getTransactionEntity(id);
 
-            // Make sure buyer owns this transaction
             if (!transaction.getBuyer().getId().equals(buyer.getId())) {
                 return ResponseEntity.badRequest()
                         .body(ApiResponse.error("Unauthorized!"));
@@ -55,7 +57,8 @@ public class BuyerController {
 
             if (!transaction.isReceiptGenerated()) {
                 return ResponseEntity.badRequest()
-                        .body(ApiResponse.error("Receipt not yet available. Order must be delivered first."));
+                        .body(ApiResponse.error(
+                                "Receipt not yet available. Order must be delivered first."));
             }
 
             byte[] pdf = receiptService.generateReceipt(transaction);
@@ -169,8 +172,53 @@ public class BuyerController {
         try {
             User buyer = authService.getCurrentUser(auth.getName());
             notificationService.markAllAsRead(buyer.getId());
+            return ResponseEntity.ok(ApiResponse.success("All marked as read!"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    @PutMapping("/orders/{id}/cancel")
+    public ResponseEntity<?> cancelOrder(
+            @PathVariable Long id,
+            Authentication auth) {
+        try {
+            User buyer = authService.getCurrentUser(auth.getName());
+            transactionService.cancelReservation(id, buyer);
+            return ResponseEntity.ok(ApiResponse.success("Reservation cancelled!"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    @PutMapping("/profile")
+    public ResponseEntity<?> updateProfile(
+            @RequestBody Map<String, String> request,
+            Authentication auth) {
+        try {
+            User user = authService.getCurrentUser(auth.getName());
+            userService.updateProfile(user, request);
             return ResponseEntity.ok(
-                    ApiResponse.success("All marked as read!"));
+                    ApiResponse.success("Profile updated!",
+                            userService.toResponse(user)));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    @PutMapping("/profile/password")
+    public ResponseEntity<?> changePassword(
+            @RequestBody Map<String, String> request,
+            Authentication auth) {
+        try {
+            User user = authService.getCurrentUser(auth.getName());
+            userService.changePassword(user,
+                    request.get("currentPassword"),
+                    request.get("newPassword"));
+            return ResponseEntity.ok(ApiResponse.success("Password changed!"));
         } catch (Exception e) {
             return ResponseEntity.badRequest()
                     .body(ApiResponse.error(e.getMessage()));

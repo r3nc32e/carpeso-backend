@@ -27,6 +27,9 @@ public class VehicleResponse {
     private String condition;
     private String status;
     private List<String> imageUrls;
+    private String videoUrl;
     private Double averageRating;
     private LocalDateTime createdAt;
+    private Integer quantity;
+    private List<String> videoUrls;
 }

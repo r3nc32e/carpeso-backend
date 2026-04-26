@@ -6,8 +6,10 @@ import com.carpeso.carpeso_backend.model.enums.AdminPrivilege;
 import com.carpeso.carpeso_backend.model.enums.Role;
 import com.carpeso.carpeso_backend.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -22,6 +24,9 @@ public class UserService {
 
     @Autowired
     private NotificationService notificationService;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
 
     public List<UserResponse> getAllBuyers() {
         return userRepository.findByRole(Role.BUYER)
@@ -38,8 +43,7 @@ public class UserService {
                 .orElseThrow(() -> new RuntimeException("User not found!")));
     }
 
-    public void warnUser(Long userId, String reason,
-                         String performedBy) {
+    public void warnUser(Long userId, String reason, String performedBy) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found!"));
         user.setWarningCount(user.getWarningCount() + 1);
@@ -94,8 +98,7 @@ public class UserService {
     }
 
     public void updateAdminPrivileges(Long adminId,
-                                      Set<AdminPrivilege> privileges,
-                                      String performedBy) {
+                                      Set<AdminPrivilege> privileges, String performedBy) {
         User admin = userRepository.findById(adminId)
                 .orElseThrow(() -> new RuntimeException("Admin not found!"));
         if (admin.getRole() != Role.ADMIN) {
@@ -112,7 +115,7 @@ public class UserService {
                             String firstName, String lastName,
                             Set<AdminPrivilege> privileges,
                             String performedBy,
-                            org.springframework.security.crypto.password.PasswordEncoder encoder) {
+                            PasswordEncoder encoder) {
         if (userRepository.existsByEmail(email)) {
             throw new RuntimeException("Email already exists!");
         }
@@ -123,11 +126,46 @@ public class UserService {
         admin.setFirstName(firstName);
         admin.setLastName(lastName);
         admin.setPrivileges(privileges);
+        admin.setActive(true);
+        admin.setLoginAttempts(0);
         userRepository.save(admin);
         auditLogService.log("ADMIN_CREATED", performedBy,
                 "User", String.valueOf(admin.getId()),
                 "Admin created: " + email, "system");
         return admin;
+    }
+
+    public void updateProfile(User user, Map<String, String> request) {
+        if (request.get("firstName") != null)
+            user.setFirstName(request.get("firstName"));
+        if (request.get("lastName") != null)
+            user.setLastName(request.get("lastName"));
+        if (request.get("middleName") != null)
+            user.setMiddleName(request.get("middleName"));
+        if (request.get("suffix") != null)
+            user.setSuffix(request.get("suffix"));
+        if (request.get("phone") != null)
+            user.setPhone(request.get("phone"));
+        if (request.get("cityName") != null)
+            user.setCityName(request.get("cityName"));
+        if (request.get("barangayName") != null)
+            user.setBarangayName(request.get("barangayName"));
+        if (request.get("streetNo") != null)
+            user.setStreetNo(request.get("streetNo"));
+        userRepository.save(user);
+    }
+
+    public void changePassword(User user, String currentPassword,
+                               String newPassword) {
+        if (!passwordEncoder.matches(currentPassword, user.getPassword())) {
+            throw new RuntimeException("Current password is incorrect!");
+        }
+        if (newPassword == null || newPassword.length() < 8) {
+            throw new RuntimeException(
+                    "New password must be at least 8 characters!");
+        }
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
     }
 
     public UserResponse toResponse(User user) {

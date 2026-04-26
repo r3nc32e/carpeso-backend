@@ -3,6 +3,7 @@ package com.carpeso.carpeso_backend.controller;
 import com.carpeso.carpeso_backend.dto.response.ApiResponse;
 import com.carpeso.carpeso_backend.model.enums.AdminPrivilege;
 import com.carpeso.carpeso_backend.service.AuditLogService;
+import com.carpeso.carpeso_backend.service.EmailService;
 import com.carpeso.carpeso_backend.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -22,6 +23,9 @@ public class SuperAdminController {
 
     @Autowired
     private UserService userService;
+
+    @Autowired
+    private EmailService emailService;
 
     @Autowired
     private AuditLogService auditLogService;
@@ -46,16 +50,23 @@ public class SuperAdminController {
             String lastName = (String) request.get("lastName");
 
             List<String> privilegeList = (List<String>) request.get("privileges");
-            Set<AdminPrivilege> privileges = privilegeList == null ? new HashSet<>() :
-                    privilegeList.stream()
-                    .map(AdminPrivilege::valueOf)
-                    .collect(Collectors.toSet());
+            Set<AdminPrivilege> privileges = privilegeList == null
+                    ? new HashSet<>()
+                    : privilegeList.stream()
+                      .map(AdminPrivilege::valueOf)
+                      .collect(Collectors.toSet());
 
             userService.createAdmin(email, password, firstName,
                     lastName, privileges, auth.getName(), passwordEncoder);
 
-            return ResponseEntity.ok(
-                    ApiResponse.success("Admin created!"));
+            // Send admin credentials via email
+            try {
+                emailService.sendAdminCreated(email, firstName, password, "ADMIN");
+            } catch (Exception e) {
+                System.out.println("Email notification failed: " + e.getMessage());
+            }
+
+            return ResponseEntity.ok(ApiResponse.success("Admin created!"));
         } catch (Exception e) {
             return ResponseEntity.badRequest()
                     .body(ApiResponse.error(e.getMessage()));
@@ -73,8 +84,7 @@ public class SuperAdminController {
                     .collect(Collectors.toSet());
             userService.updateAdminPrivileges(id, adminPrivileges,
                     auth.getName());
-            return ResponseEntity.ok(
-                    ApiResponse.success("Privileges updated!"));
+            return ResponseEntity.ok(ApiResponse.success("Privileges updated!"));
         } catch (Exception e) {
             return ResponseEntity.badRequest()
                     .body(ApiResponse.error(e.getMessage()));
@@ -87,8 +97,7 @@ public class SuperAdminController {
             Authentication auth) {
         try {
             userService.deleteUser(id, auth.getName());
-            return ResponseEntity.ok(
-                    ApiResponse.success("Admin deleted!"));
+            return ResponseEntity.ok(ApiResponse.success("Admin deleted!"));
         } catch (Exception e) {
             return ResponseEntity.badRequest()
                     .body(ApiResponse.error(e.getMessage()));
