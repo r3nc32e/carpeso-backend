@@ -140,4 +140,23 @@ public class AuthController {
                     .body(ApiResponse.error(e.getMessage()));
         }
     }
+
+    @PostMapping("/verify-password-change-otp")
+    public ResponseEntity<?> verifyPasswordChangeOtp(
+            @RequestBody Map<String, String> request) {
+        try {
+            authService.verifyAndChangePassword(
+                    request.get("email"),
+                    request.get("otp"),
+                    request.get("currentPassword"),
+                    request.get("newPassword")
+            );
+            return ResponseEntity.ok(
+                    ApiResponse.success("Password changed successfully!"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
 }

@@ -2,7 +2,6 @@ package com.carpeso.carpeso_backend.service;
 
 import com.carpeso.carpeso_backend.dto.request.VehicleRequest;
 import com.carpeso.carpeso_backend.dto.response.VehicleResponse;
-import com.carpeso.carpeso_backend.model.Category;
 import com.carpeso.carpeso_backend.model.User;
 import com.carpeso.carpeso_backend.model.Vehicle;
 import com.carpeso.carpeso_backend.model.enums.VehicleCondition;
@@ -91,51 +90,77 @@ public class VehicleService {
                 "system");
     }
 
-    private void setVehicleFields(Vehicle vehicle, VehicleRequest request) {
-        if (request.getCategoryId() != null) {
-            Category category = categoryRepository
-                    .findById(request.getCategoryId())
-                    .orElseThrow(() -> new RuntimeException("Category not found!"));
-            vehicle.setCategory(category);
+    public void setVehicleFields(Vehicle vehicle, VehicleRequest request) {
+        if (request.getCategoryId() != null)
+            vehicle.setCategory(
+                    categoryRepository.findById(request.getCategoryId()).orElse(null));
+        if (request.getBrand() != null) vehicle.setBrand(request.getBrand());
+        if (request.getModel() != null) vehicle.setModel(request.getModel());
+        if (request.getYear() != null) vehicle.setYear(request.getYear());
+        if (request.getPrice() != null) vehicle.setPrice(request.getPrice());
+        if (request.getColor() != null) vehicle.setColor(request.getColor());
+        if (request.getFuelType() != null) vehicle.setFuelType(request.getFuelType());
+        if (request.getTransmission() != null)
+            vehicle.setTransmission(request.getTransmission());
+        if (request.getBodyType() != null) vehicle.setBodyType(request.getBodyType());
+        if (request.getMileage() != null) vehicle.setMileage(request.getMileage());
+        if (request.getDescription() != null)
+            vehicle.setDescription(request.getDescription());
+        if (request.getEngineNumber() != null)
+            vehicle.setEngineNumber(request.getEngineNumber());
+        if (request.getChassisNumber() != null)
+            vehicle.setChassisNumber(request.getChassisNumber());
+        if (request.getPlateNumber() != null)
+            vehicle.setPlateNumber(request.getPlateNumber());
+        if (request.getWarrantyYears() != null)
+            vehicle.setWarrantyYears(request.getWarrantyYears());
+        if (request.getWarrantyDetails() != null)
+            vehicle.setWarrantyDetails(request.getWarrantyDetails());
+
+        // Fix: Convert String condition to VehicleCondition enum
+        if (request.getCondition() != null && !request.getCondition().isEmpty()) {
+            try {
+                vehicle.setCondition(VehicleCondition.valueOf(
+                        request.getCondition().toUpperCase().replace(" ", "_")));
+            } catch (IllegalArgumentException e) {
+                System.out.println("Invalid condition: " + request.getCondition());
+            }
         }
-        vehicle.setBrand(request.getBrand());
-        vehicle.setModel(request.getModel());
-        vehicle.setYear(request.getYear());
-        vehicle.setPrice(request.getPrice());
-        vehicle.setColor(request.getColor());
-        vehicle.setFuelType(request.getFuelType());
-        vehicle.setTransmission(request.getTransmission());
-        vehicle.setBodyType(request.getBodyType());
-        vehicle.setMileage(request.getMileage());
-        vehicle.setDescription(request.getDescription());
-        vehicle.setEngineNumber(request.getEngineNumber());
-        vehicle.setChassisNumber(request.getChassisNumber());
-        vehicle.setPlateNumber(request.getPlateNumber());
-        vehicle.setWarrantyYears(request.getWarrantyYears());
-        vehicle.setWarrantyDetails(request.getWarrantyDetails());
-        if (request.getCondition() != null) {
-            vehicle.setCondition(VehicleCondition.valueOf(
-                    request.getCondition().toUpperCase()));
-        }
-        if (request.getVideoUrl() != null)
-            vehicle.setVideoUrl(request.getVideoUrl());
+
         if (request.getImageUrls() != null) {
             vehicle.getImageUrls().clear();
             vehicle.getImageUrls().addAll(request.getImageUrls());
         }
-        if (request.getQuantity() != null)
-            vehicle.setQuantity(request.getQuantity());
         if (request.getVideoUrls() != null) {
             vehicle.getVideoUrls().clear();
             vehicle.getVideoUrls().addAll(request.getVideoUrls());
+        }
+
+        // Quantity + auto status
+        if (request.getQuantity() != null) {
+            int qty = Math.max(0, request.getQuantity());
+            vehicle.setQuantity(qty);
+            if (qty <= 0) {
+                vehicle.setStatus(VehicleStatus.SOLD);
+            } else {
+                if (vehicle.getStatus() == null ||
+                        vehicle.getStatus() == VehicleStatus.SOLD) {
+                    vehicle.setStatus(VehicleStatus.AVAILABLE);
+                }
+                // Keep RESERVED status if currently reserved
+            }
+        } else if (vehicle.getStatus() == null) {
+            vehicle.setStatus(VehicleStatus.AVAILABLE);
         }
     }
 
     public VehicleResponse toResponse(Vehicle v) {
         VehicleResponse res = new VehicleResponse();
         res.setId(v.getId());
-        if (v.getCategory() != null)
+        if (v.getCategory() != null) {
             res.setCategoryName(v.getCategory().getName());
+            res.setCategoryId(v.getCategory().getId());
+        }
         res.setBrand(v.getBrand());
         res.setModel(v.getModel());
         res.setYear(v.getYear());
@@ -157,12 +182,11 @@ public class VehicleService {
             res.setStatus(v.getStatus().name());
         res.setImageUrls(v.getImageUrls());
         res.setVideoUrl(v.getVideoUrl());
-        res.setCreatedAt(v.getCreatedAt());
-        Double avgRating = reviewRepository
-                .getAverageRatingByVehicleId(v.getId());
-        res.setAverageRating(avgRating);
-        res.setQuantity(v.getQuantity());
         res.setVideoUrls(v.getVideoUrls());
+        res.setQuantity(v.getQuantity());
+        res.setCreatedAt(v.getCreatedAt());
+        Double avgRating = reviewRepository.getAverageRatingByVehicleId(v.getId());
+        res.setAverageRating(avgRating);
         return res;
     }
 }

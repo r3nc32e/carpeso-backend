@@ -6,6 +6,7 @@ import com.carpeso.carpeso_backend.model.Transaction;
 import com.carpeso.carpeso_backend.model.User;
 import com.carpeso.carpeso_backend.model.Vehicle;
 import com.carpeso.carpeso_backend.model.enums.*;
+import com.carpeso.carpeso_backend.repository.ReviewRepository;
 import com.carpeso.carpeso_backend.repository.TransactionRepository;
 import com.carpeso.carpeso_backend.repository.UserRepository;
 import com.carpeso.carpeso_backend.repository.VehicleRepository;
@@ -13,14 +14,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
 public class TransactionService {
-
-    @Autowired
-    private EmailService emailService;
 
     @Autowired
     private TransactionRepository transactionRepository;
@@ -32,10 +32,16 @@ public class TransactionService {
     private UserRepository userRepository;
 
     @Autowired
+    private ReviewRepository reviewRepository;
+
+    @Autowired
     private AuditLogService auditLogService;
 
     @Autowired
     private NotificationService notificationService;
+
+    @Autowired
+    private EmailService emailService;
 
     private static final List<TransactionStatus> ACTIVE_STATUSES = Arrays.asList(
             TransactionStatus.PENDING,
@@ -47,6 +53,7 @@ public class TransactionService {
 
     public TransactionResponse createReservation(
             TransactionRequest request, User buyer) {
+
         if (transactionRepository.existsByBuyerIdAndStatusIn(
                 buyer.getId(), ACTIVE_STATUSES)) {
             throw new RuntimeException(
@@ -62,13 +69,11 @@ public class TransactionService {
             throw new RuntimeException("Vehicle is not available!");
         }
 
-        // Decrease quantity
         int qty = vehicle.getQuantity() != null ? vehicle.getQuantity() : 1;
         if (qty <= 0) throw new RuntimeException("No more units available!");
         vehicle.setQuantity(qty - 1);
 
-// Only reserve if quantity is 0
-        if (qty - 1 == 0) {
+        if (qty - 1 <= 0) {
             vehicle.setStatus(VehicleStatus.RESERVED);
         }
         vehicleRepository.save(vehicle);
@@ -90,11 +95,9 @@ public class TransactionService {
             } catch (Exception ignored) {}
         }
 
-        vehicle.setStatus(VehicleStatus.RESERVED);
-        vehicleRepository.save(vehicle);
         transactionRepository.save(transaction);
 
-        // Notify admins
+        // Notify TRANSACTION_MANAGER admins
         List<User> admins = userRepository.findByRole(Role.ADMIN);
         admins.forEach(admin -> {
             if (admin.getPrivileges() != null &&
@@ -125,7 +128,6 @@ public class TransactionService {
                 NotificationType.RESERVATION,
                 "/buyer/orders");
 
-        // Send reservation confirmation email
         try {
             String vehicleName = vehicle.getBrand() + " " + vehicle.getModel();
             String expiresAt = transaction.getExpiresAt()
@@ -135,10 +137,9 @@ public class TransactionService {
                     buyer.getEmail(),
                     buyer.getFirstName(),
                     vehicleName,
-                    expiresAt
-            );
+                    expiresAt);
         } catch (Exception e) {
-            System.out.println("Email notification failed: " + e.getMessage());
+            System.out.println("Email failed: " + e.getMessage());
         }
 
         auditLogService.log("RESERVATION_CREATED", buyer.getEmail(),
@@ -149,13 +150,22 @@ public class TransactionService {
         return toResponse(transaction);
     }
 
+    // ✅ Fixed — accepts String status and converts to enum
     public TransactionResponse updateStatus(Long transactionId,
-                                            TransactionStatus newStatus,
+                                            String statusStr,
                                             String adminNotes,
                                             String performedBy) {
         Transaction transaction = transactionRepository
                 .findById(transactionId)
                 .orElseThrow(() -> new RuntimeException("Transaction not found!"));
+
+        TransactionStatus newStatus;
+        try {
+            newStatus = TransactionStatus.valueOf(
+                    statusStr.toUpperCase().replace(" ", "_"));
+        } catch (Exception e) {
+            throw new RuntimeException("Invalid status: " + statusStr);
+        }
 
         TransactionStatus oldStatus = transaction.getStatus();
         transaction.setStatus(newStatus);
@@ -168,14 +178,13 @@ public class TransactionService {
         if (newStatus == TransactionStatus.DELIVERED) {
             transaction.setActualDelivery(LocalDateTime.now());
             transaction.setWarrantyStartDate(LocalDateTime.now());
-            int warrantyYears = transaction.getVehicle()
-                    .getWarrantyYears() != null ?
-                    transaction.getVehicle().getWarrantyYears() : 1;
+            int warrantyYears = transaction.getVehicle().getWarrantyYears() != null
+                    ? transaction.getVehicle().getWarrantyYears() : 1;
             transaction.setWarrantyEndDate(
                     LocalDateTime.now().plusYears(warrantyYears));
-
-            String receiptNumber = "RCP-" + String.format("%06d", transaction.getId())
-                    + "-" + LocalDateTime.now().getYear();
+            String receiptNumber = "RCP-" +
+                    String.format("%06d", transaction.getId()) +
+                    "-" + LocalDateTime.now().getYear();
             transaction.setReceiptNumber(receiptNumber);
             transaction.setReceiptGenerated(true);
         }
@@ -183,19 +192,22 @@ public class TransactionService {
         if (newStatus == TransactionStatus.COMPLETED) {
             Vehicle vehicle = transaction.getVehicle();
             vehicle.setStatus(VehicleStatus.SOLD);
+            vehicle.setQuantity(0);
             vehicleRepository.save(vehicle);
         }
 
         if (newStatus == TransactionStatus.CANCELLED ||
                 newStatus == TransactionStatus.EXPIRED) {
             Vehicle vehicle = transaction.getVehicle();
+            int qty = (vehicle.getQuantity() == null ? 0
+                    : vehicle.getQuantity()) + 1;
+            vehicle.setQuantity(qty);
             vehicle.setStatus(VehicleStatus.AVAILABLE);
             vehicleRepository.save(vehicle);
         }
 
         transactionRepository.save(transaction);
 
-        // Send email notification to buyer
         try {
             String vehicleName = transaction.getVehicle().getBrand()
                     + " " + transaction.getVehicle().getModel();
@@ -204,10 +216,9 @@ public class TransactionService {
                     transaction.getBuyer().getFirstName(),
                     vehicleName,
                     newStatus.name(),
-                    adminNotes
-            );
+                    adminNotes);
         } catch (Exception e) {
-            System.out.println("Email notification failed: " + e.getMessage());
+            System.out.println("Email failed: " + e.getMessage());
         }
 
         notificationService.send(transaction.getBuyer(),
@@ -224,6 +235,37 @@ public class TransactionService {
         return toResponse(transaction);
     }
 
+    public void cancelReservation(Long transactionId, User buyer) {
+        Transaction transaction = transactionRepository.findById(transactionId)
+                .orElseThrow(() -> new RuntimeException("Transaction not found!"));
+        if (!transaction.getBuyer().getId().equals(buyer.getId())) {
+            throw new RuntimeException("Unauthorized!");
+        }
+        if (transaction.getStatus() != TransactionStatus.PENDING) {
+            throw new RuntimeException(
+                    "Only PENDING reservations can be cancelled!");
+        }
+        transaction.setStatus(TransactionStatus.CANCELLED);
+        transactionRepository.save(transaction);
+
+        Vehicle vehicle = transaction.getVehicle();
+        int qty = (vehicle.getQuantity() == null ? 0
+                : vehicle.getQuantity()) + 1;
+        vehicle.setQuantity(qty);
+        vehicle.setStatus(VehicleStatus.AVAILABLE);
+        vehicleRepository.save(vehicle);
+
+        notificationService.send(buyer,
+                "Reservation Cancelled",
+                "Your reservation for " + vehicle.getBrand() +
+                        " " + vehicle.getModel() + " has been cancelled.",
+                NotificationType.ORDER_UPDATE, null);
+
+        auditLogService.log("RESERVATION_CANCELLED", buyer.getEmail(),
+                "Transaction", String.valueOf(transactionId),
+                "Buyer cancelled reservation", "system");
+    }
+
     public List<TransactionResponse> getAllTransactions() {
         return transactionRepository.findAll()
                 .stream().map(this::toResponse).collect(Collectors.toList());
@@ -236,51 +278,29 @@ public class TransactionService {
 
     public TransactionResponse getTransactionById(Long id) {
         return toResponse(transactionRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Transaction not found!")));
+                .orElseThrow(() -> new RuntimeException(
+                        "Transaction not found!")));
     }
 
     public Transaction getTransactionEntity(Long id) {
         return transactionRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Transaction not found!"));
-    }
-
-    public void cancelReservation(Long transactionId, User buyer) {
-        Transaction transaction = transactionRepository.findById(transactionId)
-                .orElseThrow(() -> new RuntimeException("Transaction not found!"));
-
-        if (!transaction.getBuyer().getId().equals(buyer.getId())) {
-            throw new RuntimeException("Unauthorized!");
-        }
-
-        if (transaction.getStatus() != TransactionStatus.PENDING) {
-            throw new RuntimeException("Only PENDING reservations can be cancelled!");
-        }
-
-        transaction.setStatus(TransactionStatus.CANCELLED);
-        transactionRepository.save(transaction);
-
-        Vehicle vehicle = transaction.getVehicle();
-        vehicle.setStatus(VehicleStatus.AVAILABLE);
-        vehicleRepository.save(vehicle);
-
-        auditLogService.log("RESERVATION_CANCELLED", buyer.getEmail(),
-                "Transaction", String.valueOf(transactionId),
-                "Buyer cancelled reservation", "system");
+                .orElseThrow(() -> new RuntimeException(
+                        "Transaction not found!"));
     }
 
     public TransactionResponse toResponse(Transaction t) {
         TransactionResponse res = new TransactionResponse();
         res.setId(t.getId());
-        if (t.getVehicle() != null) {
-            res.setVehicleBrand(t.getVehicle().getBrand());
-            res.setVehicleModel(t.getVehicle().getModel());
-            res.setVehicleYear(t.getVehicle().getYear());
-            res.setVehicleColor(t.getVehicle().getColor());
-            res.setVehicleId(t.getVehicle().getId());
+        if (t.getBuyer() != null) {
+            res.setBuyerFullName(t.getBuyer().getFullName());
+            res.setBuyerEmail(t.getBuyer().getEmail());
+            res.setBuyerPhone(t.getBuyer().getPhone());
+            res.setBuyerCityName(t.getBuyer().getCityName());
+            res.setBuyerBarangayName(t.getBuyer().getBarangayName());
+            res.setBuyerStreetNo(t.getBuyer().getStreetNo());
         }
         res.setAmount(t.getAmount());
-        if (t.getStatus() != null)
-            res.setStatus(t.getStatus().name());
+        if (t.getStatus() != null) res.setStatus(t.getStatus().name());
         if (t.getPaymentMode() != null)
             res.setPaymentMode(t.getPaymentMode().name());
         res.setDeliveryAddress(t.getDeliveryAddress());
@@ -298,5 +318,49 @@ public class TransactionService {
             res.setBuyerPhone(t.getBuyer().getPhone());
         }
         return res;
+    }
+
+    public Map<String, Object> getOverviewStats() {
+        Map<String, Object> stats = new HashMap<>();
+
+        long totalVehicles = vehicleRepository.count();
+        long availableVehicles = vehicleRepository
+                .findByStatus(VehicleStatus.AVAILABLE).size();
+        stats.put("totalVehicles", totalVehicles);
+        stats.put("availableVehicles", availableVehicles);
+
+        List<Transaction> allTx = transactionRepository.findAll();
+        stats.put("totalTransactions", allTx.size());
+        stats.put("pendingTransactions", allTx.stream()
+                .filter(t -> t.getStatus() == TransactionStatus.PENDING)
+                .count());
+        stats.put("completedTransactions", allTx.stream()
+                .filter(t -> t.getStatus() == TransactionStatus.COMPLETED)
+                .count());
+
+        double totalRevenue = allTx.stream()
+                .filter(t -> t.getStatus() == TransactionStatus.COMPLETED ||
+                        t.getStatus() == TransactionStatus.DELIVERED)
+                .mapToDouble(t -> t.getAmount() != null ?
+                        t.getAmount().doubleValue() : 0)
+                .sum();
+        stats.put("totalRevenue", totalRevenue);
+
+        List<User> buyers = userRepository.findByRole(Role.BUYER);
+        stats.put("totalBuyers", buyers.size());
+        stats.put("activeBuyers", buyers.stream()
+                .filter(u -> u.isActive() && !u.isSuspended()).count());
+        stats.put("suspendedUsers", buyers.stream()
+                .filter(User::isSuspended).count());
+        stats.put("totalWarnings", buyers.stream()
+                .mapToLong(User::getWarningCount).sum());
+
+        stats.put("totalReviews", reviewRepository.count());
+
+        return stats;
+    }
+
+    public Map<String, Object> getSalesStats() {
+        return getOverviewStats();
     }
 }

@@ -32,4 +32,5 @@ public class VehicleResponse {
     private LocalDateTime createdAt;
     private Integer quantity;
     private List<String> videoUrls;
+    private Long categoryId;
 }

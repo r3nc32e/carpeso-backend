@@ -15,6 +15,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
+import com.carpeso.carpeso_backend.model.UserAddress;
+import com.carpeso.carpeso_backend.repository.UserAddressRepository;
 
 @RestController
 @RequestMapping("/api/buyer")
@@ -222,6 +224,58 @@ public class BuyerController {
         } catch (Exception e) {
             return ResponseEntity.badRequest()
                     .body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    @Autowired
+    private UserAddressRepository userAddressRepository;
+
+    @GetMapping("/addresses")
+    public ResponseEntity<?> getAddresses(Authentication auth) {
+        try {
+            User user = authService.getCurrentUser(auth.getName());
+            List<UserAddress> addresses = userAddressRepository
+                    .findByUserIdOrderByIsDefaultDescCreatedAtAsc(user.getId());
+            return ResponseEntity.ok(ApiResponse.success("Addresses fetched!", addresses));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    @PostMapping("/addresses")
+    public ResponseEntity<?> addAddress(
+            @RequestBody Map<String, String> request,
+            Authentication auth) {
+        try {
+            User user = authService.getCurrentUser(auth.getName());
+            List<UserAddress> existing = userAddressRepository.findByUserId(user.getId());
+            if (existing.size() >= 5) {
+                return ResponseEntity.badRequest()
+                        .body(ApiResponse.error("Maximum 5 addresses allowed!"));
+            }
+            UserAddress address = new UserAddress();
+            address.setUser(user);
+            address.setLabel(request.getOrDefault("label", "Address " + (existing.size() + 1)));
+            address.setCityName(request.get("cityName"));
+            address.setBarangayName(request.get("barangayName"));
+            address.setStreetNo(request.get("streetNo"));
+            address.setDefault(existing.isEmpty());
+            userAddressRepository.save(address);
+            return ResponseEntity.ok(ApiResponse.success("Address added!", address));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/addresses/{id}")
+    public ResponseEntity<?> deleteAddress(
+            @PathVariable Long id,
+            Authentication auth) {
+        try {
+            userAddressRepository.deleteById(id);
+            return ResponseEntity.ok(ApiResponse.success("Address deleted!"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
         }
     }
 }

@@ -2,80 +2,68 @@ package com.carpeso.carpeso_backend.controller;
 
 import com.carpeso.carpeso_backend.dto.request.VehicleRequest;
 import com.carpeso.carpeso_backend.dto.response.ApiResponse;
-import com.carpeso.carpeso_backend.model.Category;
 import com.carpeso.carpeso_backend.model.User;
-import com.carpeso.carpeso_backend.model.WarrantyClaim;
-import com.carpeso.carpeso_backend.model.enums.ClaimStatus;
-import com.carpeso.carpeso_backend.model.enums.ReviewStatus;
-import com.carpeso.carpeso_backend.model.enums.TransactionStatus;
-import com.carpeso.carpeso_backend.repository.CategoryRepository;
+import com.carpeso.carpeso_backend.model.enums.AdminPrivilege;
+import com.carpeso.carpeso_backend.model.enums.Role;
 import com.carpeso.carpeso_backend.service.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-import com.carpeso.carpeso_backend.model.Transaction;
+import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/admin")
 @CrossOrigin(origins = "*")
 public class AdminController {
 
-    @Autowired
-    private AuthService authService;
+    @Autowired private AuthService authService;
+    @Autowired private VehicleService vehicleService;
+    @Autowired private CategoryService categoryService; //red line/error
+    @Autowired private TransactionService transactionService;
+    @Autowired private UserService userService;
+    @Autowired private AuditLogService auditLogService;
+    @Autowired private ReviewService reviewService;
+    @Autowired private ReceiptService receiptService;
 
-    @Autowired
-    private VehicleService vehicleService;
+    // ─── Helper ───────────────────────────────────────────────────────────────
 
-    @Autowired
-    private TransactionService transactionService;
+    private User getAdmin(Authentication auth) {
+        return authService.getCurrentUser(auth.getName());
+    }
 
-    @Autowired
-    private UserService userService;
+    private boolean isSuperAdmin(User user) {
+        return user.getRole() == Role.SUPERADMIN;
+    }
 
-    @Autowired
-    private ReviewService reviewService;
+    private boolean hasPrivilege(User user, AdminPrivilege privilege) {
+        if (isSuperAdmin(user)) return true;
+        return user.getPrivileges() != null &&
+                user.getPrivileges().contains(privilege);
+    }
 
-    @Autowired
-    private WarrantyClaimService warrantyClaimService;
+    private ResponseEntity<?> forbidden() {
+        return ResponseEntity.status(403)
+                .body(ApiResponse.error(
+                        "Access denied! You don't have permission for this action."));
+    }
 
-    @Autowired
-    private AuditLogService auditLogService;
+    // ─── VEHICLES — INVENTORY_MANAGER ────────────────────────────────────────
 
-    @Autowired
-    private CategoryRepository categoryRepository;
-
-    @Autowired
-    private NotificationService notificationService;
-
-    @Autowired
-    private ReceiptService receiptService;
-
-
-    // ===== RECEIPT =====
-    @GetMapping("/transactions/{id}/receipt")
-    public ResponseEntity<?> generateReceipt(
-            @PathVariable Long id,
-            Authentication auth) {
+    @GetMapping("/vehicles")
+    public ResponseEntity<?> getVehicles(Authentication auth) {
         try {
-            Transaction transaction = transactionService.getTransactionEntity(id);
-            byte[] pdf = receiptService.generateReceipt(transaction);
-            return ResponseEntity.ok()
-                    .header("Content-Type", "application/pdf")
-                    .header("Content-Disposition",
-                            "attachment; filename=receipt-" + id + ".pdf")
-                    .body(pdf);
+            User admin = getAdmin(auth);
+            if (!hasPrivilege(admin, AdminPrivilege.INVENTORY_MANAGER))
+                return forbidden();
+            return ResponseEntity.ok(
+                    ApiResponse.success("Vehicles fetched!",
+                            vehicleService.getAllVehicles()));
         } catch (Exception e) {
             return ResponseEntity.badRequest()
                     .body(ApiResponse.error(e.getMessage()));
         }
-    }
-
-    // ===== VEHICLES =====
-    @GetMapping("/vehicles")
-    public ResponseEntity<?> getAllVehicles() {
-        return ResponseEntity.ok(ApiResponse.success(
-                "Vehicles fetched!", vehicleService.getAllVehicles()));
     }
 
     @PostMapping("/vehicles")
@@ -83,10 +71,12 @@ public class AdminController {
             @RequestBody VehicleRequest request,
             Authentication auth) {
         try {
-            User admin = authService.getCurrentUser(auth.getName());
-            return ResponseEntity.ok(ApiResponse.success(
-                    "Vehicle added!",
-                    vehicleService.addVehicle(request, admin)));
+            User admin = getAdmin(auth);
+            if (!hasPrivilege(admin, AdminPrivilege.INVENTORY_MANAGER))
+                return forbidden();
+            return ResponseEntity.ok(
+                    ApiResponse.success("Vehicle added!",
+                            vehicleService.addVehicle(request, admin)));
         } catch (Exception e) {
             return ResponseEntity.badRequest()
                     .body(ApiResponse.error(e.getMessage()));
@@ -99,10 +89,13 @@ public class AdminController {
             @RequestBody VehicleRequest request,
             Authentication auth) {
         try {
-            return ResponseEntity.ok(ApiResponse.success(
-                    "Vehicle updated!",
-                    vehicleService.updateVehicle(id, request,
-                            auth.getName())));
+            User admin = getAdmin(auth);
+            if (!hasPrivilege(admin, AdminPrivilege.INVENTORY_MANAGER))
+                return forbidden();
+            return ResponseEntity.ok(
+                    ApiResponse.success("Vehicle updated!",
+                            vehicleService.updateVehicle(id, request,
+                                    admin.getEmail())));
         } catch (Exception e) {
             return ResponseEntity.badRequest()
                     .body(ApiResponse.error(e.getMessage()));
@@ -114,7 +107,10 @@ public class AdminController {
             @PathVariable Long id,
             Authentication auth) {
         try {
-            vehicleService.deleteVehicle(id, auth.getName());
+            User admin = getAdmin(auth);
+            if (!hasPrivilege(admin, AdminPrivilege.INVENTORY_MANAGER))
+                return forbidden();
+            vehicleService.deleteVehicle(id, admin.getEmail());
             return ResponseEntity.ok(
                     ApiResponse.success("Vehicle deleted!"));
         } catch (Exception e) {
@@ -123,24 +119,35 @@ public class AdminController {
         }
     }
 
-    // ===== CATEGORIES =====
+    // ─── CATEGORIES — INVENTORY_MANAGER ──────────────────────────────────────
+
     @GetMapping("/categories")
-    public ResponseEntity<?> getCategories() {
-        return ResponseEntity.ok(ApiResponse.success(
-                "Categories fetched!", categoryRepository.findAll()));
+    public ResponseEntity<?> getCategories(Authentication auth) {
+        try {
+            User admin = getAdmin(auth);
+            if (!hasPrivilege(admin, AdminPrivilege.INVENTORY_MANAGER))
+                return forbidden();
+            return ResponseEntity.ok(
+                    ApiResponse.success("Categories fetched!",
+                            categoryService.getAllCategories()));//red line/error
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error(e.getMessage()));
+        }
     }
 
     @PostMapping("/categories")
     public ResponseEntity<?> addCategory(
-            @RequestBody Category category,
+            @RequestBody java.util.Map<String, String> request,
             Authentication auth) {
         try {
-            categoryRepository.save(category);
-            auditLogService.log("CATEGORY_ADDED", auth.getName(),
-                    "Category", null,
-                    "Added: " + category.getName(), "system");
+            User admin = getAdmin(auth);
+            if (!hasPrivilege(admin, AdminPrivilege.INVENTORY_MANAGER))
+                return forbidden();
             return ResponseEntity.ok(
-                    ApiResponse.success("Category added!", category));
+                    ApiResponse.success("Category added!",
+                            categoryService.addCategory( //red line/error
+                                    request.get("name"), admin.getEmail())));
         } catch (Exception e) {
             return ResponseEntity.badRequest()
                     .body(ApiResponse.error(e.getMessage()));
@@ -152,10 +159,10 @@ public class AdminController {
             @PathVariable Long id,
             Authentication auth) {
         try {
-            categoryRepository.deleteById(id);
-            auditLogService.log("CATEGORY_DELETED", auth.getName(),
-                    "Category", String.valueOf(id),
-                    "Category deleted", "system");
+            User admin = getAdmin(auth);
+            if (!hasPrivilege(admin, AdminPrivilege.INVENTORY_MANAGER))
+                return forbidden();
+            categoryService.deleteCategory(id, admin.getEmail());//red line/error
             return ResponseEntity.ok(
                     ApiResponse.success("Category deleted!"));
         } catch (Exception e) {
@@ -164,45 +171,71 @@ public class AdminController {
         }
     }
 
-    // ===== TRANSACTIONS =====
-    @GetMapping("/transactions")
-    public ResponseEntity<?> getAllTransactions() {
-        return ResponseEntity.ok(ApiResponse.success(
-                "Transactions fetched!",
-                transactionService.getAllTransactions()));
-    }
+    // ─── TRANSACTIONS — TRANSACTION_MANAGER ──────────────────────────────────
 
-    @PutMapping("/transactions/{id}/status")
-    public ResponseEntity<?> updateTransactionStatus(
-            @PathVariable Long id,
-            @RequestParam TransactionStatus status,
-            @RequestParam(required = false) String notes,
-            Authentication auth) {
+    @GetMapping("/transactions")
+    public ResponseEntity<?> getTransactions(Authentication auth) {
         try {
-            return ResponseEntity.ok(ApiResponse.success(
-                    "Status updated!",
-                    transactionService.updateStatus(
-                            id, status, notes, auth.getName())));
+            User admin = getAdmin(auth);
+            if (!hasPrivilege(admin, AdminPrivilege.TRANSACTION_MANAGER))
+                return forbidden();
+            return ResponseEntity.ok(
+                    ApiResponse.success("Transactions fetched!",
+                            transactionService.getAllTransactions()));
         } catch (Exception e) {
             return ResponseEntity.badRequest()
                     .body(ApiResponse.error(e.getMessage()));
         }
     }
 
-    // ===== USERS =====
-    @GetMapping("/users")
-    public ResponseEntity<?> getAllUsers() {
-        return ResponseEntity.ok(ApiResponse.success(
-                "Users fetched!", userService.getAllBuyers()));
-    }
-
-    @PostMapping("/users/{id}/warn")
-    public ResponseEntity<?> warnUser(
+    @PutMapping("/transactions/{id}/status")
+    public ResponseEntity<?> updateTransactionStatus(
             @PathVariable Long id,
-            @RequestParam String reason,
+            @RequestParam String status,
+            @RequestParam(required = false) String notes,
             Authentication auth) {
         try {
-            userService.warnUser(id, reason, auth.getName());
+            User admin = getAdmin(auth);
+            if (!hasPrivilege(admin, AdminPrivilege.TRANSACTION_MANAGER))
+                return forbidden();
+            transactionService.updateStatus(id, status, notes,
+                    admin.getEmail());
+            return ResponseEntity.ok(
+                    ApiResponse.success("Status updated!"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    // ─── USERS — ACCOUNT_MANAGER ──────────────────────────────────────────────
+
+    @GetMapping("/users")
+    public ResponseEntity<?> getUsers(Authentication auth) {
+        try {
+            User admin = getAdmin(auth);
+            if (!hasPrivilege(admin, AdminPrivilege.ACCOUNT_MANAGER))
+                return forbidden();
+            return ResponseEntity.ok(
+                    ApiResponse.success("Users fetched!",
+                            userService.getAllBuyers()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    @PutMapping("/users/{id}/warn")
+    public ResponseEntity<?> warnUser(
+            @PathVariable Long id,
+            @RequestBody java.util.Map<String, String> request,
+            Authentication auth) {
+        try {
+            User admin = getAdmin(auth);
+            if (!hasPrivilege(admin, AdminPrivilege.ACCOUNT_MANAGER))
+                return forbidden();
+            userService.warnUser(id, request.get("reason"),
+                    admin.getEmail());
             return ResponseEntity.ok(
                     ApiResponse.success("Warning issued!"));
         } catch (Exception e) {
@@ -211,12 +244,15 @@ public class AdminController {
         }
     }
 
-    @PostMapping("/users/{id}/suspend")
+    @PutMapping("/users/{id}/suspend")
     public ResponseEntity<?> suspendUser(
             @PathVariable Long id,
             Authentication auth) {
         try {
-            userService.suspendUser(id, auth.getName());
+            User admin = getAdmin(auth);
+            if (!hasPrivilege(admin, AdminPrivilege.ACCOUNT_MANAGER))
+                return forbidden();
+            userService.suspendUser(id, admin.getEmail());
             return ResponseEntity.ok(
                     ApiResponse.success("User suspended!"));
         } catch (Exception e) {
@@ -225,12 +261,15 @@ public class AdminController {
         }
     }
 
-    @PostMapping("/users/{id}/unsuspend")
+    @PutMapping("/users/{id}/unsuspend")
     public ResponseEntity<?> unsuspendUser(
             @PathVariable Long id,
             Authentication auth) {
         try {
-            userService.unsuspendUser(id, auth.getName());
+            User admin = getAdmin(auth);
+            if (!hasPrivilege(admin, AdminPrivilege.ACCOUNT_MANAGER))
+                return forbidden();
+            userService.unsuspendUser(id, admin.getEmail());
             return ResponseEntity.ok(
                     ApiResponse.success("User unsuspended!"));
         } catch (Exception e) {
@@ -244,7 +283,10 @@ public class AdminController {
             @PathVariable Long id,
             Authentication auth) {
         try {
-            userService.deleteUser(id, auth.getName());
+            User admin = getAdmin(auth);
+            if (!hasPrivilege(admin, AdminPrivilege.ACCOUNT_MANAGER))
+                return forbidden();
+            userService.deleteUser(id, admin.getEmail());
             return ResponseEntity.ok(
                     ApiResponse.success("User deleted!"));
         } catch (Exception e) {
@@ -253,69 +295,17 @@ public class AdminController {
         }
     }
 
-    // ===== REVIEWS =====
+    // ─── REVIEWS — CONTENT_MODERATOR ─────────────────────────────────────────
+
     @GetMapping("/reviews")
-    public ResponseEntity<?> getAllReviews() {
-        return ResponseEntity.ok(ApiResponse.success(
-                "Reviews fetched!", reviewService.getAllReviews()));
-    }
-
-    @PutMapping("/reviews/{id}/moderate")
-    public ResponseEntity<?> moderateReview(
-            @PathVariable Long id,
-            @RequestParam ReviewStatus status,
-            Authentication auth) {
+    public ResponseEntity<?> getReviews(Authentication auth) {
         try {
-            User admin = authService.getCurrentUser(auth.getName());
-            return ResponseEntity.ok(ApiResponse.success(
-                    "Review moderated!",
-                    reviewService.moderateReview(id, status, admin)));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest()
-                    .body(ApiResponse.error(e.getMessage()));
-        }
-    }
-
-    // ===== WARRANTY CLAIMS =====
-    @GetMapping("/warranty-claims")
-    public ResponseEntity<?> getAllClaims() {
-        return ResponseEntity.ok(ApiResponse.success(
-                "Claims fetched!", warrantyClaimService.getAllClaims()));
-    }
-
-    @PutMapping("/warranty-claims/{id}")
-    public ResponseEntity<?> updateClaim(
-            @PathVariable Long id,
-            @RequestParam ClaimStatus status,
-            @RequestParam(required = false) String notes,
-            Authentication auth) {
-        try {
-            User admin = authService.getCurrentUser(auth.getName());
-            WarrantyClaim claim = warrantyClaimService
-                    .updateClaimStatus(id, status, notes, admin);
+            User admin = getAdmin(auth);
+            if (!hasPrivilege(admin, AdminPrivilege.CONTENT_MODERATOR))
+                return forbidden();
             return ResponseEntity.ok(
-                    ApiResponse.success("Claim updated!", claim));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest()
-                    .body(ApiResponse.error(e.getMessage()));
-        }
-    }
-
-    // ===== AUDIT LOGS =====
-    @GetMapping("/audit-logs")
-    public ResponseEntity<?> getAuditLogs() {
-        return ResponseEntity.ok(ApiResponse.success(
-                "Logs fetched!", auditLogService.getAllLogs()));
-    }
-
-    // ===== NOTIFICATIONS =====
-    @GetMapping("/notifications")
-    public ResponseEntity<?> getNotifications(Authentication auth) {
-        try {
-            User admin = authService.getCurrentUser(auth.getName());
-            return ResponseEntity.ok(ApiResponse.success(
-                    "Notifications fetched!",
-                    notificationService.getUserNotifications(admin.getId())));
+                    ApiResponse.success("Reviews fetched!",
+                            reviewService.getAllReviews()));
         } catch (Exception e) {
             return ResponseEntity.badRequest()
                     .body(ApiResponse.error(e.getMessage()));
@@ -327,9 +317,46 @@ public class AdminController {
             @PathVariable Long id,
             Authentication auth) {
         try {
-            reviewService.deleteReview(id, auth.getName());
+            User admin = getAdmin(auth);
+            if (!hasPrivilege(admin, AdminPrivilege.CONTENT_MODERATOR))
+                return forbidden();
+            reviewService.deleteReview(id, admin.getEmail());
             return ResponseEntity.ok(
                     ApiResponse.success("Review deleted!"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    // ─── AUDIT LOGS — SALES_ANALYST ──────────────────────────────────────────
+
+    @GetMapping("/audit-logs")
+    public ResponseEntity<?> getAuditLogs(Authentication auth) {
+        try {
+            User admin = getAdmin(auth);
+            if (!hasPrivilege(admin, AdminPrivilege.SALES_ANALYST))
+                return forbidden();
+            return ResponseEntity.ok(
+                    ApiResponse.success("Audit logs fetched!",
+                            auditLogService.getAllLogs()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    // ─── SALES ANALYTICS — SALES_ANALYST ─────────────────────────────────────
+
+    @GetMapping("/sales/stats")
+    public ResponseEntity<?> getSalesStats(Authentication auth) {
+        try {
+            User admin = getAdmin(auth);
+            if (!hasPrivilege(admin, AdminPrivilege.SALES_ANALYST))
+                return forbidden();
+            return ResponseEntity.ok(
+                    ApiResponse.success("Stats fetched!",
+                            transactionService.getSalesStats()));
         } catch (Exception e) {
             return ResponseEntity.badRequest()
                     .body(ApiResponse.error(e.getMessage()));
@@ -341,6 +368,9 @@ public class AdminController {
             @RequestParam(defaultValue = "month") String period,
             Authentication auth) {
         try {
+            User admin = getAdmin(auth);
+            if (!hasPrivilege(admin, AdminPrivilege.SALES_ANALYST))
+                return forbidden();
             byte[] pdf = receiptService.generateSalesReport(
                     transactionService.getAllTransactions(), period);
             return ResponseEntity.ok()
@@ -348,6 +378,24 @@ public class AdminController {
                     .header("Content-Disposition",
                             "attachment; filename=sales-report-" + period + ".pdf")
                     .body(pdf);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    // ─── OVERVIEW — ALL ADMINS ────────────────────────────────────────────────
+
+    @GetMapping("/overview")
+    public ResponseEntity<?> getOverview(Authentication auth) {
+        try {
+            User admin = getAdmin(auth);
+            if (admin.getRole() != Role.ADMIN &&
+                    admin.getRole() != Role.SUPERADMIN)
+                return forbidden();
+            return ResponseEntity.ok(
+                    ApiResponse.success("Overview fetched!",
+                            transactionService.getOverviewStats()));
         } catch (Exception e) {
             return ResponseEntity.badRequest()
                     .body(ApiResponse.error(e.getMessage()));

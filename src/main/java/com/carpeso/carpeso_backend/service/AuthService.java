@@ -46,7 +46,6 @@ public class AuthService {
     private EmailService emailService;
 
     public AuthResponse register(RegisterRequest request) {
-        // Input validation
         inputSanitizer.validateInput(request.getEmail(), "email");
         inputSanitizer.validateInput(request.getFirstName(), "firstName");
         inputSanitizer.validateInput(request.getLastName(), "lastName");
@@ -56,11 +55,9 @@ public class AuthService {
         }
         if (request.getPhone() != null && !request.getPhone().isEmpty()
                 && !inputSanitizer.isValidPhone(request.getPhone())) {
-            throw new RuntimeException(
-                    "Invalid phone number! Use 09XXXXXXXXX format.");
+            throw new RuntimeException("Invalid phone number! Use 09XXXXXXXXX format.");
         }
-
-        if (userRepository.existsByEmail(request.getEmail())) {
+        if (userRepository.existsByEmail(request.getEmail().toLowerCase())) {
             throw new RuntimeException("Email already exists!");
         }
 
@@ -82,94 +79,38 @@ public class AuthService {
         user.setPrivileges(new HashSet<>());
         user.setOtpCode(otp);
         user.setOtpExpiry(LocalDateTime.now().plusMinutes(10));
-        user.setActive(false); // Not active until email verified
+        user.setActive(false);
         user.setLoginAttempts(0);
 
         if (request.getPreferredPaymentMode() != null &&
                 !request.getPreferredPaymentMode().isEmpty()) {
             try {
                 user.setPreferredPaymentMode(
-                        PaymentMode.valueOf(
-                                request.getPreferredPaymentMode()
-                                        .toUpperCase().replace(" ", "_")));
+                        PaymentMode.valueOf(request.getPreferredPaymentMode()
+                                .toUpperCase().replace(" ", "_")));
             } catch (Exception ignored) {}
         }
 
         userRepository.save(user);
 
-        // Send verification email
+        // Send OTP email — with better error logging
         try {
-            emailService.sendRegistrationOtp(
-                    user.getEmail(), user.getFirstName(), otp);
+            emailService.sendRegistrationOtp(user.getEmail(), user.getFirstName(), otp);
+            System.out.println("✅ OTP email sent to: " + user.getEmail() + " | OTP: " + otp);
         } catch (Exception e) {
-            System.out.println("Email failed: " + e.getMessage());
+            System.out.println("❌ Email failed: " + e.getMessage());
+            e.printStackTrace();
         }
 
         auditLogService.log("USER_REGISTERED", user.getEmail(),
                 "User", String.valueOf(user.getId()),
-                "New buyer registered — awaiting email verification",
-                "system");
+                "New buyer registered — awaiting email verification", "system");
 
-        // Return OTP required — no token yet
         AuthResponse response = new AuthResponse();
         response.setEmail(user.getEmail());
         response.setOtpRequired(true);
+        response.setOtpCode(otp); // Keep for demo/testing
         return response;
-    }
-
-    public AuthResponse login(LoginRequest request, String ipAddress) {
-        User user = userRepository.findByEmail(
-                        request.getEmail().toLowerCase())
-                .orElseThrow(() -> new RuntimeException("Invalid email or password!"));
-
-        // Check lockout
-        if (user.getLockoutUntil() != null &&
-                LocalDateTime.now().isBefore(user.getLockoutUntil())) {
-            long minutes = java.time.Duration.between(
-                    LocalDateTime.now(), user.getLockoutUntil()).toMinutes();
-            throw new RuntimeException(
-                    "Account locked! Try again in " + (minutes + 1) + " minute(s).");
-        }
-
-        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            user.setLoginAttempts(user.getLoginAttempts() + 1);
-            if (user.getLoginAttempts() >= 3) {
-                user.setLockoutUntil(LocalDateTime.now().plusMinutes(10));
-                user.setLoginAttempts(0);
-                userRepository.save(user);
-                auditLogService.log("LOGIN_LOCKED", request.getEmail(),
-                        "User", null, "Account locked after 3 failed attempts", ipAddress);
-                throw new RuntimeException(
-                        "Too many failed attempts! Account locked for 10 minutes.");
-            }
-            userRepository.save(user);
-            auditLogService.log("LOGIN_FAILED", request.getEmail(),
-                    "User", null, "Invalid password attempt #" + user.getLoginAttempts(), ipAddress);
-            throw new RuntimeException("Invalid email or password! "
-                    + (3 - user.getLoginAttempts()) + " attempt(s) remaining.");
-        }
-
-        if (!user.isActive()) {
-            throw new RuntimeException("Account is not yet verified! Please check your email.");
-        }
-
-        if (user.isSuspended()) {
-            throw new RuntimeException("Account is suspended!");
-        }
-
-        // Reset attempts on success
-        user.setLoginAttempts(0);
-        user.setLockoutUntil(null);
-        user.setLastLogin(LocalDateTime.now());
-        userRepository.save(user);
-
-        String token = jwtUtil.generateToken(user.getEmail(), user.getRole().name());
-
-        auditLogService.log("LOGIN_SUCCESS", user.getEmail(),
-                "User", String.valueOf(user.getId()),
-                "Successful login from " + ipAddress, ipAddress);
-
-        return buildAuthResponse(user, token, false);
     }
 
     public AuthResponse verifyRegistration(String email, String otp,
@@ -293,5 +234,39 @@ public class AuthService {
         auditLogService.log("PASSWORD_RESET", email,
                 "User", String.valueOf(user.getId()),
                 "Password reset successfully", "system");
+    }
+
+    public void verifyAndChangePassword(String email, String otp,
+                                        String currentPassword, String newPassword) {
+        User user = userRepository.findByEmail(email.toLowerCase())
+                .orElseThrow(() -> new RuntimeException("User not found!"));
+
+        if (!otpUtil.isOtpValid(user.getOtpCode(), otp, user.getOtpExpiry())) {
+            throw new RuntimeException("Invalid or expired OTP!");
+        }
+
+        if (!passwordEncoder.matches(currentPassword, user.getPassword())) {
+            throw new RuntimeException("Current password is incorrect!");
+        }
+
+        if (newPassword == null || newPassword.length() < 8) {
+            throw new RuntimeException("Password must be at least 8 characters!");
+        }
+
+        user.setPassword(passwordEncoder.encode(newPassword));
+        user.setOtpCode(null);
+        user.setOtpExpiry(null);
+        userRepository.save(user);
+
+        try {
+            emailService.sendPasswordResetConfirmation(
+                    user.getEmail(), user.getFirstName());
+        } catch (Exception e) {
+            System.out.println("Email failed: " + e.getMessage());
+        }
+
+        auditLogService.log("PASSWORD_CHANGED", email,
+                "User", String.valueOf(user.getId()),
+                "Password changed via profile with OTP verification", "system");
     }
 }
