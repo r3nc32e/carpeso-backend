@@ -17,6 +17,9 @@ import java.util.List;
 import java.util.Map;
 import com.carpeso.carpeso_backend.model.UserAddress;
 import com.carpeso.carpeso_backend.repository.UserAddressRepository;
+import com.carpeso.carpeso_backend.repository.UserRepository;
+import com.carpeso.carpeso_backend.service.FileUploadService;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/buyer")
@@ -43,6 +46,12 @@ public class BuyerController {
 
     @Autowired
     private UserService userService;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private FileUploadService fileUploadService;
 
     @GetMapping("/orders/{id}/receipt")
     public ResponseEntity<?> downloadReceipt(
@@ -276,6 +285,40 @@ public class BuyerController {
             return ResponseEntity.ok(ApiResponse.success("Address deleted!"));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    @PostMapping("/profile/id/primary")
+    public ResponseEntity<?> uploadPrimaryId(
+            @RequestParam("file") org.springframework.web.multipart.MultipartFile file,
+            Authentication auth) {
+        try {
+            User user = authService.getCurrentUser(auth.getName());
+            String url = fileUploadService.uploadImage(file);
+            user.setPrimaryIdUrl(url);
+            userRepository.save(user);
+            return ResponseEntity.ok(
+                    ApiResponse.success("Primary ID uploaded!", url));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    @PostMapping("/profile/id/secondary")
+    public ResponseEntity<?> uploadSecondaryId(
+            @RequestParam("file") org.springframework.web.multipart.MultipartFile file,
+            Authentication auth) {
+        try {
+            User user = authService.getCurrentUser(auth.getName());
+            String url = fileUploadService.uploadImage(file);
+            user.setSecondaryIdUrl(url);
+            userRepository.save(user);
+            return ResponseEntity.ok(
+                    ApiResponse.success("Secondary ID uploaded!", url));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest()
+                    .body(ApiResponse.error(e.getMessage()));
         }
     }
 }

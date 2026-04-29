@@ -78,4 +78,7 @@ public class User {
             name.append(", ").append(suffix);
         return name.toString().trim();
     }
+
+    private String primaryIdUrl;
+    private String secondaryIdUrl;
 }

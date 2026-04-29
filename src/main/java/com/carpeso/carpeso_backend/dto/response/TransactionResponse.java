@@ -31,4 +31,7 @@ public class TransactionResponse {
     private String buyerCityName;
     private String buyerBarangayName;
     private String buyerStreetNo;
+    private String deliveryNotes;
+    private String buyerPrimaryIdUrl;
+    private String buyerSecondaryIdUrl;
 }

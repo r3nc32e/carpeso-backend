@@ -43,6 +43,9 @@ public class AuthService {
     private NotificationService notificationService;
 
     @Autowired
+    private com.carpeso.carpeso_backend.repository.UserAddressRepository userAddressRepository;
+
+    @Autowired
     private EmailService emailService;
 
     public AuthResponse register(RegisterRequest request) {
@@ -93,6 +96,24 @@ public class AuthService {
 
         userRepository.save(user);
 
+        // Auto-save address as Address 1 if provided
+        if (request.getCityName() != null && !request.getCityName().isEmpty()
+                && request.getBarangayName() != null && !request.getBarangayName().isEmpty()) {
+            try {
+                com.carpeso.carpeso_backend.model.UserAddress address =
+                        new com.carpeso.carpeso_backend.model.UserAddress();
+                address.setUser(user);
+                address.setLabel("Address 1");
+                address.setCityName(request.getCityName());
+                address.setBarangayName(request.getBarangayName());
+                address.setStreetNo(request.getStreetNo());
+                address.setDefault(true);
+                userAddressRepository.save(address);
+            } catch (Exception e) {
+                System.out.println("Address save failed: " + e.getMessage());
+            }
+        }
+
         // Send OTP email — with better error logging
         try {
             emailService.sendRegistrationOtp(user.getEmail(), user.getFirstName(), otp);
@@ -113,6 +134,67 @@ public class AuthService {
         return response;
     }
 
+    public AuthResponse directLogin(LoginRequest request, String ipAddress) {
+        User user = userRepository.findByEmail(
+                        request.getEmail().toLowerCase())
+                .orElseThrow(() -> new RuntimeException(
+                        "Invalid email or password!"));
+
+        // Check lockout
+        if (user.getLockoutUntil() != null &&
+                LocalDateTime.now().isBefore(user.getLockoutUntil())) {
+            long minutes = java.time.Duration.between(
+                    LocalDateTime.now(), user.getLockoutUntil()).toMinutes();
+            throw new RuntimeException(
+                    "Account locked! Try again in " + (minutes + 1) + " minute(s).");
+        }
+
+        if (!passwordEncoder.matches(
+                request.getPassword(), user.getPassword())) {
+            user.setLoginAttempts(user.getLoginAttempts() + 1);
+            if (user.getLoginAttempts() >= 3) {
+                user.setLockoutUntil(LocalDateTime.now().plusMinutes(10));
+                user.setLoginAttempts(0);
+                userRepository.save(user);
+                auditLogService.log("LOGIN_LOCKED", request.getEmail(),
+                        "User", null,
+                        "Account locked after 3 failed attempts", ipAddress);
+                throw new RuntimeException(
+                        "Too many failed attempts! Account locked for 10 minutes.");
+            }
+            userRepository.save(user);
+            auditLogService.log("LOGIN_FAILED", request.getEmail(),
+                    "User", null,
+                    "Invalid password attempt #" + user.getLoginAttempts(),
+                    ipAddress);
+            throw new RuntimeException("Invalid email or password! "
+                    + (3 - user.getLoginAttempts()) + " attempt(s) remaining.");
+        }
+
+        if (!user.isActive()) {
+            throw new RuntimeException(
+                    "Account is not yet verified! Please check your email.");
+        }
+
+        if (user.isSuspended()) {
+            throw new RuntimeException("Account is suspended!");
+        }
+
+        // Reset attempts
+        user.setLoginAttempts(0);
+        user.setLockoutUntil(null);
+        user.setLastLogin(LocalDateTime.now());
+        userRepository.save(user);
+
+        String token = jwtUtil.generateToken(
+                user.getEmail(), user.getRole().name());
+
+        auditLogService.log("LOGIN_SUCCESS", user.getEmail(),
+                "User", String.valueOf(user.getId()),
+                "Successful login from " + ipAddress, ipAddress);
+
+        return buildAuthResponse(user, token, false);
+    }
     public AuthResponse verifyRegistration(String email, String otp,
                                            String ipAddress) {
         User user = userRepository.findByEmail(email.toLowerCase())

@@ -1,7 +1,6 @@
 package com.carpeso.carpeso_backend.controller;
 
 import com.carpeso.carpeso_backend.dto.request.LoginRequest;
-import com.carpeso.carpeso_backend.dto.request.OtpRequest;
 import com.carpeso.carpeso_backend.dto.request.RegisterRequest;
 import com.carpeso.carpeso_backend.dto.response.ApiResponse;
 import com.carpeso.carpeso_backend.dto.response.AuthResponse;
@@ -33,7 +32,9 @@ public class AuthController {
         try {
             AuthResponse response = authService.register(request);
             return ResponseEntity.ok(
-                    ApiResponse.success("Registration successful! Check your email for verification code.", response));
+                    ApiResponse.success(
+                            "Registration successful! Check your email for verification code.",
+                            response));
         } catch (Exception e) {
             return ResponseEntity.badRequest()
                     .body(ApiResponse.error(e.getMessage()));
@@ -49,10 +50,10 @@ public class AuthController {
             AuthResponse response = authService.verifyRegistration(
                     request.get("email"),
                     request.get("otp"),
-                    ip
-            );
+                    ip);
             return ResponseEntity.ok(
-                    ApiResponse.success("Email verified! Welcome to Carpeso!", response));
+                    ApiResponse.success(
+                            "Email verified! Welcome to Carpeso!", response));
         } catch (Exception e) {
             return ResponseEntity.badRequest()
                     .body(ApiResponse.error(e.getMessage()));
@@ -65,9 +66,9 @@ public class AuthController {
             HttpServletRequest httpRequest) {
         try {
             String ip = httpRequest.getRemoteAddr();
-            AuthResponse response = authService.login(request, ip);
+            AuthResponse response = authService.directLogin(request, ip); //
             return ResponseEntity.ok(
-                    ApiResponse.success("OTP sent to your email!", response));
+                    ApiResponse.success("Login successful!", response));
         } catch (Exception e) {
             return ResponseEntity.badRequest()
                     .body(ApiResponse.error(e.getMessage()));
@@ -76,12 +77,12 @@ public class AuthController {
 
     @PostMapping("/verify-otp")
     public ResponseEntity<?> verifyOtp(
-            @RequestBody OtpRequest request,
+            @RequestBody Map<String, String> request,
             HttpServletRequest httpRequest) {
         try {
             String ip = httpRequest.getRemoteAddr();
             AuthResponse response = authService.verifyOtp(
-                    request.getEmail(), request.getOtp(), ip);
+                    request.get("email"), request.get("otp"), ip);
             return ResponseEntity.ok(
                     ApiResponse.success("Login successful!", response));
         } catch (Exception e) {
@@ -131,8 +132,7 @@ public class AuthController {
             authService.resetPassword(
                     request.get("email"),
                     request.get("otp"),
-                    request.get("newPassword")
-            );
+                    request.get("newPassword"));
             return ResponseEntity.ok(
                     ApiResponse.success("Password reset successfully!"));
         } catch (Exception e) {
@@ -149,8 +149,7 @@ public class AuthController {
                     request.get("email"),
                     request.get("otp"),
                     request.get("currentPassword"),
-                    request.get("newPassword")
-            );
+                    request.get("newPassword"));
             return ResponseEntity.ok(
                     ApiResponse.success("Password changed successfully!"));
         } catch (Exception e) {
@@ -158,5 +157,4 @@ public class AuthController {
                     .body(ApiResponse.error(e.getMessage()));
         }
     }
-
 }

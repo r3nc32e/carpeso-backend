@@ -190,6 +190,8 @@ public class UserService {
         res.setWarningCount(user.getWarningCount());
         res.setCreatedAt(user.getCreatedAt());
         res.setLastLogin(user.getLastLogin());
+        res.setPrimaryIdUrl(user.getPrimaryIdUrl());
+        res.setSecondaryIdUrl(user.getSecondaryIdUrl());
         if (user.getPrivileges() != null) {
             res.setPrivileges(user.getPrivileges().stream()
                     .map(Enum::name).collect(Collectors.toSet()));

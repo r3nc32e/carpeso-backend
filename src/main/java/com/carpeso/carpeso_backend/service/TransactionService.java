@@ -291,19 +291,18 @@ public class TransactionService {
     public TransactionResponse toResponse(Transaction t) {
         TransactionResponse res = new TransactionResponse();
         res.setId(t.getId());
-        if (t.getBuyer() != null) {
-            res.setBuyerFullName(t.getBuyer().getFullName());
-            res.setBuyerEmail(t.getBuyer().getEmail());
-            res.setBuyerPhone(t.getBuyer().getPhone());
-            res.setBuyerCityName(t.getBuyer().getCityName());
-            res.setBuyerBarangayName(t.getBuyer().getBarangayName());
-            res.setBuyerStreetNo(t.getBuyer().getStreetNo());
+        if (t.getVehicle() != null) {
+            res.setVehicleId(t.getVehicle().getId());
+            res.setVehicleBrand(t.getVehicle().getBrand());
+            res.setVehicleModel(t.getVehicle().getModel());
+            res.setVehicleYear(t.getVehicle().getYear());
+            res.setVehicleColor(t.getVehicle().getColor());
         }
         res.setAmount(t.getAmount());
         if (t.getStatus() != null) res.setStatus(t.getStatus().name());
-        if (t.getPaymentMode() != null)
-            res.setPaymentMode(t.getPaymentMode().name());
+        if (t.getPaymentMode() != null) res.setPaymentMode(t.getPaymentMode().name());
         res.setDeliveryAddress(t.getDeliveryAddress());
+        res.setDeliveryNotes(t.getDeliveryNotes());
         res.setAdminNotes(t.getAdminNotes());
         res.setReceiptNumber(t.getReceiptNumber());
         res.setReceiptGenerated(t.isReceiptGenerated());
@@ -312,10 +311,15 @@ public class TransactionService {
         res.setExpiresAt(t.getExpiresAt());
         res.setCreatedAt(t.getCreatedAt());
         res.setUpdatedAt(t.getUpdatedAt());
+        res.setBuyerPrimaryIdUrl(t.getBuyer().getPrimaryIdUrl());
+        res.setBuyerSecondaryIdUrl(t.getBuyer().getSecondaryIdUrl());
         if (t.getBuyer() != null) {
             res.setBuyerFullName(t.getBuyer().getFullName());
             res.setBuyerEmail(t.getBuyer().getEmail());
             res.setBuyerPhone(t.getBuyer().getPhone());
+            res.setBuyerCityName(t.getBuyer().getCityName());
+            res.setBuyerBarangayName(t.getBuyer().getBarangayName());
+            res.setBuyerStreetNo(t.getBuyer().getStreetNo());
         }
         return res;
     }

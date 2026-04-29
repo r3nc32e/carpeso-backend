@@ -27,4 +27,7 @@ public class UserResponse {
     private int warningCount;
     private LocalDateTime createdAt;
     private LocalDateTime lastLogin;
+    private String primaryIdUrl;
+    private String secondaryIdUrl;
+    private String streetNo;
 }
