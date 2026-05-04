@@ -10,13 +10,20 @@ import java.util.List;
 
 @Repository
 public interface ReviewRepository extends JpaRepository<Review, Long> {
+
     List<Review> findByVehicleId(Long vehicleId);
+
     List<Review> findByBuyerId(Long buyerId);
+
     List<Review> findByStatus(ReviewStatus status);
+
     List<Review> findByVehicleIdAndStatus(Long vehicleId, ReviewStatus status);
 
     @Query("SELECT AVG(r.rating) FROM Review r WHERE r.vehicle.id = :vehicleId AND r.status = 'APPROVED'")
     Double getAverageRatingByVehicleId(@Param("vehicleId") Long vehicleId);
+
+    // Counts approved reviews per vehicle — used by VehicleService for reviewCount
+    int countByVehicleIdAndStatus(Long vehicleId, ReviewStatus status);
 
     boolean existsByBuyerIdAndTransactionId(Long buyerId, Long transactionId);
 }

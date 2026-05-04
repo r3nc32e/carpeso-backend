@@ -1,9 +1,9 @@
 package com.carpeso.carpeso_backend.controller;
 
 import com.carpeso.carpeso_backend.dto.response.ApiResponse;
+import com.carpeso.carpeso_backend.dto.response.ReviewResponse;
 import com.carpeso.carpeso_backend.dto.response.VehicleResponse;
 import com.carpeso.carpeso_backend.model.Category;
-import com.carpeso.carpeso_backend.model.Review;
 import com.carpeso.carpeso_backend.repository.CategoryRepository;
 import com.carpeso.carpeso_backend.service.ReviewService;
 import com.carpeso.carpeso_backend.service.VehicleService;
@@ -18,32 +18,23 @@ import java.util.List;
 @CrossOrigin(origins = "*")
 public class PublicController {
 
-    @Autowired
-    private VehicleService vehicleService;
-
-    @Autowired
-    private CategoryRepository categoryRepository;
-
-    @Autowired
-    private ReviewService reviewService;
+    @Autowired private VehicleService vehicleService;
+    @Autowired private CategoryRepository categoryRepository;
+    @Autowired private ReviewService reviewService;
 
     @GetMapping("/vehicles")
     public ResponseEntity<?> getAvailableVehicles() {
-        List<VehicleResponse> vehicles =
-                vehicleService.getAllVehicles();
-        return ResponseEntity.ok(
-                ApiResponse.success("Vehicles fetched!", vehicles));
+        List<VehicleResponse> vehicles = vehicleService.getAllVehicles();
+        return ResponseEntity.ok(ApiResponse.success("Vehicles fetched!", vehicles));
     }
 
     @GetMapping("/vehicles/{id}")
     public ResponseEntity<?> getVehicleById(@PathVariable Long id) {
         try {
             VehicleResponse vehicle = vehicleService.getVehicleById(id);
-            return ResponseEntity.ok(
-                    ApiResponse.success("Vehicle fetched!", vehicle));
+            return ResponseEntity.ok(ApiResponse.success("Vehicle fetched!", vehicle));
         } catch (Exception e) {
-            return ResponseEntity.badRequest()
-                    .body(ApiResponse.error(e.getMessage()));
+            return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
         }
     }
 
@@ -57,22 +48,20 @@ public class PublicController {
             @RequestParam(required = false) String condition) {
         List<VehicleResponse> vehicles = vehicleService.searchVehicles(
                 brand, bodyType, fuelType, minPrice, maxPrice, condition);
-        return ResponseEntity.ok(
-                ApiResponse.success("Search results!", vehicles));
+        return ResponseEntity.ok(ApiResponse.success("Search results!", vehicles));
     }
 
     @GetMapping("/categories")
     public ResponseEntity<?> getCategories() {
-        List<Category> categories =
-                categoryRepository.findByIsActiveTrue();
-        return ResponseEntity.ok(
-                ApiResponse.success("Categories fetched!", categories));
+        List<Category> categories = categoryRepository.findByIsActiveTrue();
+        return ResponseEntity.ok(ApiResponse.success("Categories fetched!", categories));
     }
 
+    // Returns ReviewResponse (not raw Review entity) so buyerId is always explicit
+    // and no raw User/password data leaks into the public API
     @GetMapping("/vehicles/{id}/reviews")
     public ResponseEntity<?> getVehicleReviews(@PathVariable Long id) {
-        List<Review> reviews = reviewService.getVehicleReviews(id);
-        return ResponseEntity.ok(
-                ApiResponse.success("Reviews fetched!", reviews));
+        List<ReviewResponse> reviews = reviewService.getVehicleReviewResponses(id);
+        return ResponseEntity.ok(ApiResponse.success("Reviews fetched!", reviews));
     }
 }

@@ -3,11 +3,13 @@ package com.carpeso.carpeso_backend.service;
 import com.carpeso.carpeso_backend.dto.response.UserResponse;
 import com.carpeso.carpeso_backend.model.User;
 import com.carpeso.carpeso_backend.model.enums.AdminPrivilege;
+import com.carpeso.carpeso_backend.model.enums.NotificationType;
 import com.carpeso.carpeso_backend.model.enums.Role;
 import com.carpeso.carpeso_backend.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -16,17 +18,11 @@ import java.util.stream.Collectors;
 @Service
 public class UserService {
 
-    @Autowired
-    private UserRepository userRepository;
-
-    @Autowired
-    private AuditLogService auditLogService;
-
-    @Autowired
-    private NotificationService notificationService;
-
-    @Autowired
-    private PasswordEncoder passwordEncoder;
+    @Autowired private UserRepository userRepository;
+    @Autowired private AuditLogService auditLogService;
+    @Autowired private NotificationService notificationService;
+    @Autowired private PasswordEncoder passwordEncoder;
+    @Autowired private EmailService emailService;
 
     public List<UserResponse> getAllBuyers() {
         return userRepository.findByRole(Role.BUYER)
@@ -43,6 +39,8 @@ public class UserService {
                 .orElseThrow(() -> new RuntimeException("User not found!")));
     }
 
+    // ─── Warn user / buyer ────────────────────────────────────────────────────
+
     public void warnUser(Long userId, String reason, String performedBy) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found!"));
@@ -53,14 +51,27 @@ public class UserService {
             notificationService.send(user,
                     "Account Suspended",
                     "Your account has been suspended due to multiple violations.",
-                    com.carpeso.carpeso_backend.model.enums.NotificationType.ACCOUNT_WARNING,
-                    null);
+                    NotificationType.ACCOUNT_WARNING, null);
+            try {
+                emailService.sendAccountSuspension(
+                        user.getEmail(), user.getFirstName(),
+                        "Multiple warnings received: " + reason,
+                        "Permanent until reviewed");
+            } catch (Exception e) {
+                System.out.println("Email failed: " + e.getMessage());
+            }
         } else {
             notificationService.send(user,
                     "Warning Issued",
                     "You have received a warning: " + reason,
-                    com.carpeso.carpeso_backend.model.enums.NotificationType.ACCOUNT_WARNING,
-                    null);
+                    NotificationType.ACCOUNT_WARNING, null);
+            try {
+                emailService.sendWarningNotification(
+                        user.getEmail(), user.getFirstName(),
+                        reason, user.getWarningCount());
+            } catch (Exception e) {
+                System.out.println("Email failed: " + e.getMessage());
+            }
         }
 
         userRepository.save(user);
@@ -69,15 +80,36 @@ public class UserService {
                 "Warning issued: " + reason, "system");
     }
 
-    public void suspendUser(Long userId, String performedBy) {
+    // ─── Suspend user / buyer ─────────────────────────────────────────────────
+
+    public void suspendUser(Long userId, String reason,
+                            int durationDays, String performedBy) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found!"));
         user.setSuspended(true);
         userRepository.save(user);
+
+        String durationLabel = durationDays == -1
+                ? "Permanent" : durationDays + " day(s)";
+
+        try {
+            emailService.sendAccountSuspension(
+                    user.getEmail(), user.getFirstName(), reason, durationLabel);
+        } catch (Exception e) {
+            System.out.println("Email failed: " + e.getMessage());
+        }
+
+        notificationService.send(user,
+                "Account Suspended",
+                "Your account has been suspended. Reason: " + reason,
+                NotificationType.ACCOUNT_WARNING, null);
+
         auditLogService.log("USER_SUSPENDED", performedBy,
                 "User", String.valueOf(userId),
-                "User suspended", "system");
+                "Suspended: " + reason + " | Duration: " + durationLabel, "system");
     }
+
+    // ─── Unsuspend user / buyer ───────────────────────────────────────────────
 
     public void unsuspendUser(Long userId, String performedBy) {
         User user = userRepository.findById(userId)
@@ -85,10 +117,24 @@ public class UserService {
         user.setSuspended(false);
         user.setWarningCount(0);
         userRepository.save(user);
+
+        notificationService.send(user,
+                "Account Reinstated",
+                "Your account has been reinstated. Welcome back!",
+                NotificationType.ACCOUNT_WARNING, null);
+        try {
+            emailService.sendAccountReinstatement(
+                    user.getEmail(), user.getFirstName());
+        } catch (Exception e) {
+            System.out.println("Email failed: " + e.getMessage());
+        }
+
         auditLogService.log("USER_UNSUSPENDED", performedBy,
                 "User", String.valueOf(userId),
                 "User unsuspended", "system");
     }
+
+    // ─── Delete user ──────────────────────────────────────────────────────────
 
     public void deleteUser(Long userId, String performedBy) {
         userRepository.deleteById(userId);
@@ -97,13 +143,14 @@ public class UserService {
                 "User deleted", "system");
     }
 
+    // ─── Update admin privileges ──────────────────────────────────────────────
+
     public void updateAdminPrivileges(Long adminId,
                                       Set<AdminPrivilege> privileges, String performedBy) {
         User admin = userRepository.findById(adminId)
                 .orElseThrow(() -> new RuntimeException("Admin not found!"));
-        if (admin.getRole() != Role.ADMIN) {
+        if (admin.getRole() != Role.ADMIN)
             throw new RuntimeException("User is not an admin!");
-        }
         admin.setPrivileges(privileges);
         userRepository.save(admin);
         auditLogService.log("PRIVILEGES_UPDATED", performedBy,
@@ -111,29 +158,53 @@ public class UserService {
                 "Privileges updated: " + privileges, "system");
     }
 
+    // ─── Create admin — original signature (backward compat) ─────────────────
+
     public User createAdmin(String email, String password,
                             String firstName, String lastName,
                             Set<AdminPrivilege> privileges,
                             String performedBy,
                             PasswordEncoder encoder) {
-        if (userRepository.existsByEmail(email)) {
+        return createAdmin(email, password, firstName, lastName,
+                null, null, null, privileges, performedBy, encoder);
+    }
+
+    // ─── Create admin — full signature with optional fields ──────────────────
+
+    public User createAdmin(String email, String password,
+                            String firstName, String lastName,
+                            String middleName, String suffix, String phone,
+                            Set<AdminPrivilege> privileges,
+                            String performedBy,
+                            PasswordEncoder encoder) {
+        if (email == null || email.isBlank())
+            throw new RuntimeException("Email is required!");
+        if (userRepository.existsByEmail(email.toLowerCase()))
             throw new RuntimeException("Email already exists!");
-        }
+
         User admin = new User();
         admin.setEmail(email.toLowerCase());
         admin.setPassword(encoder.encode(password));
         admin.setRole(Role.ADMIN);
         admin.setFirstName(firstName);
         admin.setLastName(lastName);
-        admin.setPrivileges(privileges);
-        admin.setActive(true);
+        if (middleName != null) admin.setMiddleName(middleName);
+        if (suffix != null)     admin.setSuffix(suffix);
+        if (phone != null)      admin.setPhone(phone);
+        admin.setPrivileges(privileges != null ? privileges : new HashSet<>());
+        admin.setActive(true);        // Admins are active immediately — no OTP needed
+        admin.setSuspended(false);
+        admin.setWarningCount(0);
         admin.setLoginAttempts(0);
+
         userRepository.save(admin);
         auditLogService.log("ADMIN_CREATED", performedBy,
                 "User", String.valueOf(admin.getId()),
-                "Admin created: " + email, "system");
+                "Sub-admin created: " + email, "system");
         return admin;
     }
+
+    // ─── Update profile fields ────────────────────────────────────────────────
 
     public void updateProfile(User user, Map<String, String> request) {
         if (request.get("firstName") != null)
@@ -155,18 +226,19 @@ public class UserService {
         userRepository.save(user);
     }
 
+    // ─── Change password (used by buyers via BuyerController) ────────────────
+
     public void changePassword(User user, String currentPassword,
                                String newPassword) {
-        if (!passwordEncoder.matches(currentPassword, user.getPassword())) {
+        if (!passwordEncoder.matches(currentPassword, user.getPassword()))
             throw new RuntimeException("Current password is incorrect!");
-        }
-        if (newPassword == null || newPassword.length() < 8) {
-            throw new RuntimeException(
-                    "New password must be at least 8 characters!");
-        }
+        if (newPassword == null || newPassword.length() < 8)
+            throw new RuntimeException("New password must be at least 8 characters!");
         user.setPassword(passwordEncoder.encode(newPassword));
         userRepository.save(user);
     }
+
+    // ─── toResponse ───────────────────────────────────────────────────────────
 
     public UserResponse toResponse(User user) {
         UserResponse res = new UserResponse();
@@ -192,6 +264,7 @@ public class UserService {
         res.setLastLogin(user.getLastLogin());
         res.setPrimaryIdUrl(user.getPrimaryIdUrl());
         res.setSecondaryIdUrl(user.getSecondaryIdUrl());
+        res.setStreetNo(user.getStreetNo());
         if (user.getPrivileges() != null) {
             res.setPrivileges(user.getPrivileges().stream()
                     .map(Enum::name).collect(Collectors.toSet()));

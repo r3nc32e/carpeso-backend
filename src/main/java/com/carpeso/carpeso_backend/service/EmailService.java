@@ -302,4 +302,78 @@ public class EmailService {
 
         sendEmail(email, "🚗 Carpeso — Admin Account Created", html);
     }
+
+    public void sendWarrantyClaimUpdate(String email, String firstName,
+                                        String status, String adminResponse) throws Exception {
+        String title = status.equals("APPROVED")
+                ? "✅ Warranty Claim Approved"
+                : "❌ Warranty Claim Update";
+        String body = "<div style='background:#f9f9f9;padding:16px;border-radius:12px;'>"
+                + "<p style='white-space:pre-wrap;color:#374151;font-size:14px;'>"
+                + (adminResponse != null ? adminResponse.replace("\n", "<br>") : "Your claim has been reviewed.")
+                + "</p></div>";
+        String html = getEmailTemplate(title,
+                "Dear " + firstName + ",",
+                body,
+                "Thank you for your patience. — Carpeso Support Team");
+        sendEmail(email, "Carpeso — Warranty Claim " + status, html);
+    }
+    public void sendAccountSuspension(String email, String firstName,
+                                      String reason, String duration) throws Exception {
+        String body = "<div style='background:#FEF2F2;border:1px solid #FECACA;padding:16px;border-radius:12px;'>"
+                + "<p style='color:#374151;font-size:14px;line-height:1.6;'>"
+                + "We regret to inform you that your Carpeso account has been <strong>suspended</strong>.<br><br>"
+                + "<strong>Reason:</strong> " + reason + "<br>"
+                + "<strong>Duration:</strong> " + duration + "<br><br>"
+                + "Your actions have violated our Terms and Conditions. "
+                + "If you believe this is a mistake, please contact our support team "
+                + "at <a href='mailto:support@carpeso.com'>support@carpeso.com</a>.<br><br>"
+                + "We apologize for any inconvenience caused."
+                + "</p></div>";
+        String html = getEmailTemplate(
+                "Account Suspended",
+                "Dear " + firstName + ",",
+                body,
+                "— Carpeso Support Team");
+        sendEmail(email, "Carpeso — Account Suspension Notice", html);
+    }
+    public void sendWarningNotification(String email, String firstName,
+                                        String reason, int warningCount) throws Exception {
+        String body = "<div style='background:#FFF7ED;border:1px solid #FED7AA;"
+                + "padding:16px;border-radius:12px;'>"
+                + "<p style='color:#374151;font-size:14px;line-height:1.6;'>"
+                + "You have received <strong>Warning #" + warningCount + "</strong> "
+                + "on your Carpeso account.<br><br>"
+                + "<strong>Reason:</strong> " + reason + "<br><br>"
+                + "⚠️ Please note that <strong>3 warnings</strong> will result in "
+                + "automatic account suspension.<br><br>"
+                + "Please review our <a href='http://localhost:5173/terms'>Terms and Conditions</a> "
+                + "to avoid further violations."
+                + "</p></div>";
+        String html = getEmailTemplate(
+                "⚠️ Warning Issued — Carpeso",
+                "Dear " + firstName + ",",
+                body,
+                "If you believe this is a mistake, contact support@carpeso.com");
+        sendEmail(email, "Carpeso — Warning Notice #" + warningCount, html);
+    }
+
+    public void sendAccountReinstatement(String email,
+                                         String firstName) throws Exception {
+        String body = "<div style='background:#F0FDF4;border:1px solid #BBF7D0;"
+                + "padding:16px;border-radius:12px;'>"
+                + "<p style='color:#374151;font-size:14px;line-height:1.6;'>"
+                + "Great news! Your Carpeso account has been <strong>reinstated</strong>.<br><br>"
+                + "You can now log in and resume using our services. "
+                + "Please ensure that you comply with our Terms and Conditions "
+                + "to avoid future suspensions.<br><br>"
+                + "Welcome back to Carpeso!"
+                + "</p></div>";
+        String html = getEmailTemplate(
+                "✅ Account Reinstated",
+                "Dear " + firstName + ",",
+                body,
+                "Thank you for your patience. — Carpeso Support Team");
+        sendEmail(email, "Carpeso — Account Reinstated", html);
+    }
 }

@@ -29,6 +29,7 @@ public class VehicleResponse {
     private List<String> imageUrls;
     private String videoUrl;
     private Double averageRating;
+    private Integer reviewCount;   // NEW — total approved reviews for this vehicle
     private LocalDateTime createdAt;
     private Integer quantity;
     private List<String> videoUrls;

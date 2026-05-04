@@ -4,6 +4,7 @@ import com.carpeso.carpeso_backend.model.enums.ClaimStatus;
 import jakarta.persistence.*;
 import lombok.Data;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 @Entity
@@ -34,6 +35,9 @@ public class WarrantyClaim {
 
     @Column(length = 2000)
     private String adminNotes;
+
+    @Column(length = 2000)
+    private String adminResponse;
 
     private String evidenceUrl;
 

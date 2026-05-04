@@ -34,7 +34,10 @@ public class SecurityConfig {
         http
                 .cors(cors -> cors.configurationSource(request -> {
                     var config = new org.springframework.web.cors.CorsConfiguration();
-                    config.setAllowedOrigins(java.util.List.of("http://localhost:5173"));
+                    config.setAllowedOrigins(java.util.List.of(
+                            "http://localhost:5173",
+                            "https://localhost:5173"
+                    ));
                     config.setAllowedMethods(java.util.List.of("GET","POST","PUT","DELETE","OPTIONS","PATCH"));
                     config.setAllowedHeaders(java.util.List.of("*"));
                     config.setAllowCredentials(true);
@@ -44,7 +47,20 @@ public class SecurityConfig {
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**").permitAll()
+                        // ✅ Public auth endpoints
+                        .requestMatchers("/api/auth/login").permitAll()
+                        .requestMatchers("/api/auth/register").permitAll()
+                        .requestMatchers("/api/auth/verify-registration").permitAll()
+                        .requestMatchers("/api/auth/verify-otp").permitAll()
+                        .requestMatchers("/api/auth/forgot-password").permitAll()
+                        .requestMatchers("/api/auth/reset-password").permitAll()
+                        .requestMatchers("/api/auth/test").permitAll()
+                        // ✅ Auth endpoints that require a logged-in user
+                        .requestMatchers("/api/auth/me").authenticated()
+                        .requestMatchers("/api/auth/profile").authenticated()
+                        .requestMatchers("/api/auth/verify-password-change-otp").authenticated()
+                        // ✅ Profile update allowed for all authenticated roles
+                        .requestMatchers("/api/buyer/profile").hasAnyAuthority("BUYER", "ADMIN", "SUPERADMIN")
                         .requestMatchers("/api/public/**").permitAll()
                         .requestMatchers("/api/locations/**").permitAll()
                         .requestMatchers("/api/admin/**").hasAnyAuthority("ADMIN", "SUPERADMIN")

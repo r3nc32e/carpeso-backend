@@ -33,11 +33,15 @@ public class WarrantyClaimService {
     @Autowired
     private AuditLogService auditLogService;
 
+    @Autowired
+    private EmailService emailService;
+
     public WarrantyClaim createClaim(WarrantyClaimRequest request,
                                      User buyer) {
         Transaction transaction = transactionRepository
                 .findById(request.getTransactionId())
-                .orElseThrow(() -> new RuntimeException("Transaction not found!"));
+                .orElseThrow(() -> new RuntimeException(
+                        "Transaction not found!"));
 
         WarrantyClaim claim = new WarrantyClaim();
         claim.setTransaction(transaction);
@@ -47,13 +51,19 @@ public class WarrantyClaimService {
         claim.setStatus(ClaimStatus.OPEN);
         warrantyClaimRepository.save(claim);
 
-        // Notify admins
-        userRepository.findByRole(Role.ADMIN).forEach(admin ->
+        // Notify TRANSACTION_MANAGER admins
+        userRepository.findByRole(Role.ADMIN).forEach(admin -> {
+            if (admin.getPrivileges() != null &&
+                    admin.getPrivileges().contains(
+                            com.carpeso.carpeso_backend.model.enums
+                                    .AdminPrivilege.TRANSACTION_MANAGER)) {
                 notificationService.send(admin,
                         "New Warranty Claim",
                         buyer.getFullName() + " filed a warranty claim.",
                         NotificationType.WARRANTY_CLAIM,
-                        "/admin/warranty-claims"));
+                        "/admin/warranty-claims");
+            }
+        });
 
         userRepository.findByRole(Role.SUPERADMIN).forEach(sa ->
                 notificationService.send(sa,
@@ -70,35 +80,53 @@ public class WarrantyClaimService {
         return claim;
     }
 
-    public WarrantyClaim updateClaimStatus(Long claimId,
-                                           ClaimStatus status,
-                                           String adminNotes,
-                                           User admin) {
+    // ✅ Admin update via string status + adminResponse + email
+    public void updateClaimStatus(Long claimId, String statusStr,
+                                  String adminResponse, String performedBy) {
         WarrantyClaim claim = warrantyClaimRepository.findById(claimId)
                 .orElseThrow(() -> new RuntimeException("Claim not found!"));
 
-        claim.setStatus(status);
-        claim.setAdminNotes(adminNotes);
-        claim.setHandledBy(admin);
+        // Convert string to enum
+        ClaimStatus newStatus;
+        try {
+            newStatus = ClaimStatus.valueOf(
+                    statusStr.toUpperCase().replace(" ", "_"));
+        } catch (Exception e) {
+            newStatus = ClaimStatus.OPEN;
+        }
+
+        claim.setStatus(newStatus);
+        claim.setAdminResponse(adminResponse);
         claim.setUpdatedAt(LocalDateTime.now());
 
-        if (status == ClaimStatus.RESOLVED) {
+        if (newStatus == ClaimStatus.RESOLVED ||
+                newStatus == ClaimStatus.CLOSED) {
             claim.setResolvedAt(LocalDateTime.now());
         }
 
         warrantyClaimRepository.save(claim);
 
+        // Send email to buyer
+        try {
+            emailService.sendWarrantyClaimUpdate(
+                    claim.getBuyer().getEmail(),
+                    claim.getBuyer().getFirstName(),
+                    statusStr,
+                    adminResponse);
+        } catch (Exception e) {
+            System.out.println("Email failed: " + e.getMessage());
+        }
+
+        // Notify buyer
         notificationService.send(claim.getBuyer(),
                 "Warranty Claim Update",
-                "Your warranty claim status: " + status.name(),
+                "Your warranty claim has been " + statusStr + ".",
                 NotificationType.WARRANTY_CLAIM,
-                "/buyer/claims");
+                "/buyer/warranty-claims");
 
-        auditLogService.log("WARRANTY_CLAIM_UPDATED", admin.getEmail(),
+        auditLogService.log("WARRANTY_CLAIM_UPDATED", performedBy,
                 "WarrantyClaim", String.valueOf(claimId),
-                "Status updated to: " + status, "system");
-
-        return claim;
+                "Status updated to: " + statusStr, "system");
     }
 
     public List<WarrantyClaim> getAllClaims() {

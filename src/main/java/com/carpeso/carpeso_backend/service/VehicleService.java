@@ -187,6 +187,10 @@ public class VehicleService {
         res.setCreatedAt(v.getCreatedAt());
         Double avgRating = reviewRepository.getAverageRatingByVehicleId(v.getId());
         res.setAverageRating(avgRating);
+        // NEW: count of approved reviews shown publicly
+        int count = reviewRepository.countByVehicleIdAndStatus(
+                v.getId(), com.carpeso.carpeso_backend.model.enums.ReviewStatus.APPROVED);
+        res.setReviewCount(count);
         return res;
     }
 }

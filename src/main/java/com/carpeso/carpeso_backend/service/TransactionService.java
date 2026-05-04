@@ -191,8 +191,13 @@ public class TransactionService {
 
         if (newStatus == TransactionStatus.COMPLETED) {
             Vehicle vehicle = transaction.getVehicle();
-            vehicle.setStatus(VehicleStatus.SOLD);
-            vehicle.setQuantity(0);
+            // Don't change quantity — it was already decreased during reservation
+            // Only mark as SOLD if quantity is 0
+            if (vehicle.getQuantity() == null || vehicle.getQuantity() <= 0) {
+                vehicle.setStatus(VehicleStatus.SOLD);
+            } else {
+                vehicle.setStatus(VehicleStatus.AVAILABLE);
+            }
             vehicleRepository.save(vehicle);
         }
 

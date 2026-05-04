@@ -13,19 +13,23 @@ public class SecurityFilter implements Filter {
     public void doFilter(ServletRequest request, ServletResponse response,
                          FilterChain chain) throws IOException, ServletException {
 
-        HttpServletRequest req = (HttpServletRequest) request;
+        HttpServletRequest  req = (HttpServletRequest)  request;
         HttpServletResponse res = (HttpServletResponse) response;
 
-        // Security Headers — XSS, Clickjacking, MIME Sniffing
-        res.setHeader("X-Content-Type-Options", "nosniff");
-        res.setHeader("X-Frame-Options", "DENY");
-        res.setHeader("X-XSS-Protection", "1; mode=block");
+        // ── Security Headers (OWASP recommended) ──────────────────────────
+        res.setHeader("X-Content-Type-Options",  "nosniff");
+        res.setHeader("X-Frame-Options",          "DENY");
+        res.setHeader("X-XSS-Protection",         "1; mode=block");
         res.setHeader("Strict-Transport-Security",
                 "max-age=31536000; includeSubDomains; preload");
         res.setHeader("Content-Security-Policy",
                 "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'");
-        res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-        res.setHeader("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
+        res.setHeader("Referrer-Policy",          "strict-origin-when-cross-origin");
+        res.setHeader("Permissions-Policy",       "geolocation=(), microphone=(), camera=()");
+
+        // ── Carpeso Security Stack identifier (visible in DevTools) ───────
+        res.setHeader("X-Security-Stack",
+                "JWT + RBAC + OTP + AES-256 + RateLimit + InputValidation");
 
         chain.doFilter(request, response);
     }
